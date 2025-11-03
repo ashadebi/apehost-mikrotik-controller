@@ -1,6 +1,7 @@
 import { Node, Edge } from 'reactflow';
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force';
 import dagre from 'dagre';
+import { LAYOUT_DEFAULTS, DYNAMIC_SCALING } from './networkMapConstants';
 
 export type LayoutType = 'force' | 'hierarchical' | 'radial' | 'grid';
 
@@ -8,6 +9,9 @@ interface LayoutOptions {
   width?: number;
   height?: number;
   spacing?: number;
+  forceStrength?: number;
+  interfaceRadius?: number;
+  hostRadius?: number;
 }
 
 /**
@@ -20,7 +24,11 @@ export function forceDirectedLayout(
   edges: Edge[],
   options: LayoutOptions = {}
 ): Node[] {
-  const { width = 1200, height = 800, spacing = 150 } = options;
+  const {
+    width = 1200,
+    height = 800,
+    forceStrength = DYNAMIC_SCALING.getForceStrength(nodes.length)
+  } = options;
 
   // Create a deep copy to avoid mutations
   const simulationNodes = nodes.map((node) => ({
@@ -34,22 +42,32 @@ export function forceDirectedLayout(
     target: edge.target,
   }));
 
-  // Create force simulation
+  // Calculate dynamic parameters based on network size
+  const collisionRadius = nodes.reduce<number>((max, node) => {
+    if (node.id === 'router') return Math.max(max, DYNAMIC_SCALING.getCollisionRadius('router'));
+    if (node.id.startsWith('interface-')) return Math.max(max, DYNAMIC_SCALING.getCollisionRadius('interface'));
+    if (node.id.startsWith('host-')) return Math.max(max, DYNAMIC_SCALING.getCollisionRadius('host'));
+    return max;
+  }, LAYOUT_DEFAULTS.FORCE.collisionRadius);
+
+  const simulationTicks = DYNAMIC_SCALING.getSimulationTicks(nodes.length);
+
+  // Create force simulation with dynamic parameters
   const simulation = forceSimulation(simulationNodes as any)
     .force(
       'link',
       forceLink(simulationLinks)
         .id((d: any) => d.id)
-        .distance(spacing)
+        .distance(LAYOUT_DEFAULTS.FORCE.linkDistance)
         .strength(1)
     )
-    .force('charge', forceManyBody().strength(-1000))
-    .force('center', forceCenter(width / 2, height / 2))
-    .force('collision', forceCollide().radius(80))
+    .force('charge', forceManyBody().strength(forceStrength))
+    .force('center', forceCenter(width / 2, height / 2).strength(LAYOUT_DEFAULTS.FORCE.centerStrength))
+    .force('collision', forceCollide().radius(collisionRadius))
     .stop();
 
-  // Run simulation synchronously
-  for (let i = 0; i < 300; i++) {
+  // Run simulation synchronously with dynamic tick count
+  for (let i = 0; i < simulationTicks; i++) {
     simulation.tick();
   }
 
@@ -74,27 +92,25 @@ export function forceDirectedLayout(
 export function hierarchicalLayout(
   nodes: Node[],
   edges: Edge[],
-  options: LayoutOptions = {}
+  _options: LayoutOptions = {}
 ): Node[] {
-  const { spacing = 150 } = options;
-
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-  // Configure layout direction and spacing
+  // Configure layout direction and spacing with constants
   dagreGraph.setGraph({
     rankdir: 'TB', // Top to Bottom
-    nodesep: spacing,
-    ranksep: spacing,
-    marginx: 50,
-    marginy: 50,
+    nodesep: LAYOUT_DEFAULTS.HIERARCHICAL.nodeSeparation,
+    ranksep: LAYOUT_DEFAULTS.HIERARCHICAL.rankSeparation,
+    marginx: LAYOUT_DEFAULTS.HIERARCHICAL.marginX,
+    marginy: LAYOUT_DEFAULTS.HIERARCHICAL.marginY,
   });
 
   // Add nodes to dagre graph
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, {
       width: node.style?.width || 180,
-      height: 100,
+      height: LAYOUT_DEFAULTS.HIERARCHICAL.nodeHeight,
     });
   });
 
@@ -139,6 +155,11 @@ export function radialLayout(
   const interfaceNodes = nodes.filter((n) => n.id.startsWith('interface-'));
   const hostNodes = nodes.filter((n) => n.id.startsWith('host-'));
 
+  // Calculate dynamic radii based on network size
+  const radii = options.interfaceRadius && options.hostRadius
+    ? { interface: options.interfaceRadius, host: options.hostRadius }
+    : DYNAMIC_SCALING.getRadialRadii(interfaceNodes.length, hostNodes.length);
+
   const updatedNodes: Node[] = [];
 
   // Router at center
@@ -149,8 +170,8 @@ export function radialLayout(
     });
   });
 
-  // Interfaces in first ring
-  const interfaceRadius = 300;
+  // Interfaces in first ring with dynamic radius
+  const interfaceRadius = radii.interface;
   const interfaceAngleStep = (2 * Math.PI) / Math.max(interfaceNodes.length, 1);
 
   interfaceNodes.forEach((node, index) => {
@@ -164,8 +185,8 @@ export function radialLayout(
     });
   });
 
-  // Hosts in outer ring, grouped by interface
-  const hostRadius = 500;
+  // Hosts in outer ring with dynamic radius, grouped by interface
+  const hostRadius = radii.host;
   const hostsPerInterface = new Map<string, Node[]>();
 
   // Group hosts by their connected interface
@@ -184,7 +205,7 @@ export function radialLayout(
   interfaceNodes.forEach((iface, ifaceIndex) => {
     const hosts = hostsPerInterface.get(iface.id) || [];
     const baseAngle = ifaceIndex * interfaceAngleStep;
-    const hostAngleRange = Math.PI / 3; // 60 degrees per interface
+    const hostAngleRange = LAYOUT_DEFAULTS.RADIAL.arcSpread; // Configurable arc spread per interface
     const hostAngleStep = hosts.length > 1 ? hostAngleRange / (hosts.length - 1) : 0;
 
     hosts.forEach((host, hostIndex) => {
@@ -212,7 +233,8 @@ export function gridLayout(
   _edges: Edge[],
   options: LayoutOptions = {}
 ): Node[] {
-  const { spacing = 200 } = options;
+  const { spacing = LAYOUT_DEFAULTS.GRID.spacing } = options;
+  const hostSpacing = LAYOUT_DEFAULTS.GRID.hostSpacing;
 
   // Categorize nodes
   const routerNodes = nodes.filter((n) => n.id === 'router');
@@ -229,8 +251,11 @@ export function gridLayout(
     });
   });
 
-  // Interfaces in row below router
-  const interfacesPerRow = Math.ceil(Math.sqrt(interfaceNodes.length));
+  // Interfaces in row below router with dynamic columns
+  const interfacesPerRow = DYNAMIC_SCALING.getGridColumns(
+    interfaceNodes.length,
+    LAYOUT_DEFAULTS.GRID.columnsMultiplier
+  );
   interfaceNodes.forEach((node, index) => {
     const row = Math.floor(index / interfacesPerRow);
     const col = index % interfacesPerRow;
@@ -243,8 +268,11 @@ export function gridLayout(
     });
   });
 
-  // Hosts in grid below interfaces
-  const hostsPerRow = Math.ceil(Math.sqrt(hostNodes.length));
+  // Hosts in grid below interfaces with denser spacing
+  const hostsPerRow = DYNAMIC_SCALING.getGridColumns(
+    hostNodes.length,
+    LAYOUT_DEFAULTS.GRID.columnsMultiplier
+  );
   const startY = Math.ceil(interfaceNodes.length / interfacesPerRow) * spacing + spacing * 3;
 
   hostNodes.forEach((node, index) => {
@@ -253,8 +281,8 @@ export function gridLayout(
     updatedNodes.push({
       ...node,
       position: {
-        x: col * (spacing * 0.8) + spacing,
-        y: row * (spacing * 0.8) + startY,
+        x: col * hostSpacing + spacing,
+        y: row * hostSpacing + startY,
       },
     });
   });

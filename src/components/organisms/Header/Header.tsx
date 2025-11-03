@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CloudServerOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { CloudServerOutlined, ClockCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ServiceInfo } from '../../molecules/ServiceControl/ServiceControl';
 import { ServerModal } from '../../molecules/ServerModal/ServerModal';
 import api from '../../../services/api';
@@ -16,6 +16,13 @@ export const Header: React.FC<HeaderProps> = () => {
   const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'connecting'>('connecting');
   const [frontendInfo, setFrontendInfo] = useState<ServiceInfo | undefined>();
   const [backendInfo, setBackendInfo] = useState<ServiceInfo | undefined>();
+  const [speedTesting, setSpeedTesting] = useState(false);
+  const [speedTestResults, setSpeedTestResults] = useState<{
+    latency: number;
+    downloadSpeed: number;
+    testServer: string;
+    timestamp: string;
+  } | null>(null);
 
   const fetchServiceInfo = async () => {
     try {
@@ -99,6 +106,25 @@ export const Header: React.FC<HeaderProps> = () => {
     }
   };
 
+  const handleSpeedTest = async () => {
+    setSpeedTesting(true);
+    try {
+      const response = await fetch('/api/router/speed-test');
+
+      if (!response.ok) {
+        throw new Error('Speed test failed');
+      }
+
+      const results = await response.json();
+      setSpeedTestResults(results);
+
+    } catch (error) {
+      console.error('Speed test failed:', error);
+    } finally {
+      setSpeedTesting(false);
+    }
+  };
+
   const getTimezone = () => {
     return localStorage.getItem('timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
   };
@@ -128,6 +154,30 @@ export const Header: React.FC<HeaderProps> = () => {
             <ClockCircleOutlined className={styles.timeIcon} />
             <span className={styles.timeText}>{formatTime()}</span>
           </div>
+
+          <button
+            className={`${styles.speedTestButton} ${speedTesting ? styles.testing : ''} ${speedTestResults ? styles.hasResults : ''}`}
+            onClick={handleSpeedTest}
+            disabled={speedTesting}
+            title={speedTesting ? 'Running speed test...' : speedTestResults ? `Server: ${speedTestResults.testServer}` : 'Run speed test'}
+          >
+            <ThunderboltOutlined
+              className={`${styles.speedTestIcon} ${speedTesting ? styles.glowing : ''}`}
+              style={{ color: speedTesting ? 'var(--color-accent-warning)' : 'var(--color-accent-primary)' }}
+            />
+            {speedTestResults && (
+              <div className={styles.speedTestResults}>
+                <div className={styles.speedTestItem}>
+                  <span className={styles.speedTestLabel}>Latency:</span>
+                  <span className={styles.speedTestValue}>{speedTestResults.latency}ms</span>
+                </div>
+                <div className={styles.speedTestItem}>
+                  <span className={styles.speedTestLabel}>Download:</span>
+                  <span className={styles.speedTestValue}>{speedTestResults.downloadSpeed} Mbps</span>
+                </div>
+              </div>
+            )}
+          </button>
 
           <button
             className={styles.serverButton}

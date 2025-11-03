@@ -51,6 +51,71 @@
   font-family: var(--font-mono);
 }
 
+.speedTestButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.speedTestButton.hasResults {
+  width: auto;
+  padding: 0 var(--space-md);
+}
+
+.speedTestButton.testing {
+  border-color: var(--color-accent-warning);
+  box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+}
+
+.speedTestButton:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-accent-primary);
+  transform: scale(1.02);
+}
+
+.speedTestButton:disabled {
+  cursor: not-allowed;
+}
+
+.speedTestIcon {
+  font-size: 20px;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.speedTestIcon.glowing {
+  animation: glow 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+@keyframes glow {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+  50% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 16px currentColor);
+  }
+}
+
+.speedTestResults {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+}
+
 .serverButton {
   display: flex;
   align-items: center;
@@ -71,9 +136,33 @@
   transform: scale(1.05);
 }
 
+.serverButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .serverIcon {
   font-size: 20px;
   transition: color 0.3s ease;
+}
+
+.speedTestItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.speedTestLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.speedTestValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-accent-primary);
+  font-family: var(--font-mono);
 }
 
 .connectionStatus {

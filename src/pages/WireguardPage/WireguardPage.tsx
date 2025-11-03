@@ -81,6 +81,10 @@ export const WireguardPage: React.FC = () => {
         setPublicKey(data.publicKey);
         setHasChanges(true);
         message.success('New keys generated');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        message.error(errorData.message || 'Failed to generate keys');
+        console.error('[WireguardPage] Error generating keys:', response.status, errorData);
       }
     } catch (err) {
       message.error('Failed to generate keys');
@@ -110,7 +114,9 @@ export const WireguardPage: React.FC = () => {
         setHasChanges(false);
         message.success('Interface configuration saved');
       } else {
-        message.error('Failed to save configuration');
+        const errorData = await response.json().catch(() => ({}));
+        message.error(errorData.message || 'Failed to save configuration');
+        console.error('[WireguardPage] Error saving config:', response.status, errorData);
       }
     } catch (err) {
       message.error('Failed to save configuration');
@@ -132,7 +138,9 @@ export const WireguardPage: React.FC = () => {
         setEnabled(newEnabled);
         message.success(`Interface ${newEnabled ? 'enabled' : 'disabled'}`);
       } else {
-        message.error('Failed to toggle interface');
+        const errorData = await response.json().catch(() => ({}));
+        message.error(errorData.message || 'Failed to toggle interface');
+        console.error('[WireguardPage] Error toggling interface:', response.status, errorData);
       }
     } catch (err) {
       message.error('Failed to toggle interface');

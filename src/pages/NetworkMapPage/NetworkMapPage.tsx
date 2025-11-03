@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -12,11 +12,17 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Spin, Alert } from 'antd';
+import { SaveOutlined, DeleteOutlined, UploadOutlined, ExportOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { InterfaceTypeIcon } from '../../components/atoms/InterfaceTypeIcon/InterfaceTypeIcon';
 import { NetworkInterface, ArpEntry, RouterStatus } from '../../types/api';
-import { applyLayout, LayoutType } from '../../utils/networkLayouts';
+import { applyLayout } from '../../utils/networkLayouts';
 import { Button } from '../../components/atoms/Button/Button';
 import { Toggle } from '../../components/atoms/Toggle/Toggle';
+import { TemplateEditorModal } from '../../components/molecules/TemplateEditorModal';
+import { NetworkMapLegend } from '../../components/organisms/NetworkMapLegend';
+import { useNetworkMapPreferences } from '../../hooks/useNetworkMapPreferences';
+import { NODE_DIMENSIONS, API_CONFIG } from '../../utils/networkMapConstants';
+import { exportTemplates, importTemplates } from '../../utils/networkMapStorage';
 import styles from './NetworkMapPage.module.css';
 
 interface NetworkTopology {
@@ -26,6 +32,25 @@ interface NetworkTopology {
 }
 
 export const NetworkMapPage: React.FC = () => {
+  // Use custom preference hook
+  const {
+    currentTemplate,
+    allTemplates,
+    layoutConfig,
+    filters,
+    visualization,
+    applyTemplate,
+    saveAsTemplate,
+    deleteTemplate,
+    refreshTemplates,
+    setFilters,
+    setVisualization,
+  } = useNetworkMapPreferences();
+
+  // Template editor modal state
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [templateModalMode, setTemplateModalMode] = useState<'save' | 'edit'>('save');
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [topology, setTopology] = useState<NetworkTopology>({
@@ -33,22 +58,18 @@ export const NetworkMapPage: React.FC = () => {
     interfaces: [],
     arpTable: []
   });
-  const [layoutType, setLayoutType] = useState<LayoutType>('radial');
-  const [showActiveInterfaces, setShowActiveInterfaces] = useState(true);
-  const [showInactiveInterfaces, setShowInactiveInterfaces] = useState(true);
-  const [showDetailedInfo, setShowDetailedInfo] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
-  const [speedTesting, setSpeedTesting] = useState(false);
-  const [speedTestResults, setSpeedTestResults] = useState<{
-    latency: number;
-    downloadSpeed: number;
-    testServer: string;
-    timestamp: string;
-  } | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Extract filter values for easier use - inactive is OFF by default
+  const showActiveInterfaces = filters.showActiveInterfaces;
+  const showInactiveInterfaces = filters.showInactiveInterfaces ?? false;
+  const showDetailedInfo = filters.showDetailedInfo;
+  const layoutType = layoutConfig.type;
+  const nodeSize = layoutConfig.nodeSize;
 
   // Load network topology data
   const loadTopology = useCallback(async () => {
@@ -81,8 +102,8 @@ export const NetworkMapPage: React.FC = () => {
 
   useEffect(() => {
     loadTopology();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadTopology, 30000);
+    // Refresh at configured interval
+    const interval = setInterval(loadTopology, API_CONFIG.REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [loadTopology]);
 
@@ -90,7 +111,6 @@ export const NetworkMapPage: React.FC = () => {
   const handleNetworkScan = useCallback(async () => {
     setScanning(true);
     try {
-      console.log('Starting comprehensive network scan...');
       const response = await fetch('/api/router/scan/full');
 
       if (!response.ok) {
@@ -98,7 +118,6 @@ export const NetworkMapPage: React.FC = () => {
       }
 
       const scanResults = await response.json();
-      console.log('Network scan complete:', scanResults);
 
       // Update topology with enhanced data from scan
       setTopology(prev => ({
@@ -108,17 +127,6 @@ export const NetworkMapPage: React.FC = () => {
 
       setLastScanTime(scanResults.scanTime);
 
-      // Show scan results in console for debugging
-      console.log(`Scan Results:
-        - ARP Entries: ${scanResults.arpTable.length}
-        - DHCP Leases: ${scanResults.dhcpLeases.length}
-        - Neighbors: ${scanResults.neighbors.length}
-        - Enhanced Hosts: ${scanResults.enhancedHosts.length}
-      `);
-
-      // Log enhanced hosts with all their data
-      console.log('Enhanced Hosts:', scanResults.enhancedHosts);
-
     } catch (error) {
       console.error('Network scan failed:', error);
       setError('Network scan failed. Please try again.');
@@ -127,52 +135,11 @@ export const NetworkMapPage: React.FC = () => {
     }
   }, []);
 
-  // Trigger speed test
-  const handleSpeedTest = useCallback(async () => {
-    setSpeedTesting(true);
-    try {
-      console.log('Starting speed test...');
-      const response = await fetch('/api/router/speed-test');
-
-      if (!response.ok) {
-        throw new Error('Speed test failed');
-      }
-
-      const results = await response.json();
-      console.log('Speed test complete:', results);
-
-      setSpeedTestResults(results);
-
-    } catch (error) {
-      console.error('Speed test failed:', error);
-      setError('Speed test failed. Please try again.');
-    } finally {
-      setSpeedTesting(false);
+  // Memoize graph construction to prevent unnecessary recalculations
+  const { nodes: constructedNodes, edges: constructedEdges } = useMemo(() => {
+    if (!topology.router) {
+      return { nodes: [], edges: [] };
     }
-  }, []);
-
-  // Build network graph
-  useEffect(() => {
-    if (!topology.router) return;
-
-    // Debug: Log all ARP entries
-    console.log('=== Network Map Debug ===');
-    console.log(`Total ARP entries: ${topology.arpTable.length}`);
-    console.log('ARP Table:', topology.arpTable.map(arp => ({
-      interface: arp.interface,
-      ip: arp.address,
-      mac: arp.macAddress,
-      status: arp.status,
-      disabled: arp.disabled,
-      invalid: arp.invalid
-    })));
-    console.log('Interfaces:', topology.interfaces.map(i => ({
-      name: i.name,
-      type: i.type,
-      isBridge: i.isBridge,
-      bridge: i.bridge,
-      bridgePorts: i.bridgePorts
-    })));
 
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
@@ -197,18 +164,13 @@ export const NetworkMapPage: React.FC = () => {
         border: '2px solid var(--color-accent-primary)',
         borderRadius: 'var(--radius-md)',
         padding: '16px',
-        width: 180,
+        width: NODE_DIMENSIONS.ROUTER[nodeSize],
         fontSize: '14px'
       }
     });
 
-    // Separate interfaces into bridges, bridge members, and standalone interfaces
+    // Separate interfaces into bridges and standalone interfaces
     const bridges = topology.interfaces.filter(iface => iface.isBridge);
-    const bridgeMemberNames = new Set(
-      topology.interfaces
-        .filter(iface => iface.bridge)
-        .map(iface => iface.name)
-    );
     const standaloneInterfaces = topology.interfaces.filter(
       iface => !iface.isBridge && !iface.bridge
     );
@@ -265,7 +227,7 @@ export const NetworkMapPage: React.FC = () => {
           border: `3px solid ${bridge.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)'}`,
           borderRadius: 'var(--radius-md)',
           padding: '14px',
-          width: showDetailedInfo ? 180 : 160,
+          width: NODE_DIMENSIONS.BRIDGE[nodeSize],
           fontSize: '13px'
         }
       });
@@ -277,6 +239,7 @@ export const NetworkMapPage: React.FC = () => {
         target: bridgeId,
         type: 'smoothstep',
         animated: bridge.status === 'up',
+        className: 'edge-primary',
         style: {
           stroke: bridge.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
           strokeWidth: 3
@@ -318,7 +281,7 @@ export const NetworkMapPage: React.FC = () => {
             border: `2px solid ${port.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)'}`,
             borderRadius: 'var(--radius-md)',
             padding: '10px',
-            width: showDetailedInfo ? 140 : 120,
+            width: NODE_DIMENSIONS.BRIDGE_PORT[nodeSize],
             fontSize: '11px'
           }
         });
@@ -330,6 +293,7 @@ export const NetworkMapPage: React.FC = () => {
           target: portId,
           type: 'smoothstep',
           animated: port.status === 'up',
+          className: 'edge-secondary',
           style: {
             stroke: port.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
             strokeWidth: 2,
@@ -379,7 +343,7 @@ export const NetworkMapPage: React.FC = () => {
               border: `1px solid ${getHostBorderColor()}`,
               borderRadius: 'var(--radius-md)',
               padding: '8px',
-              width: 120,
+              width: NODE_DIMENSIONS.HOST[nodeSize],
               fontSize: '10px'
             }
           });
@@ -389,6 +353,7 @@ export const NetworkMapPage: React.FC = () => {
             source: portId,
             target: hostId,
             type: 'smoothstep',
+            className: 'edge-tertiary',
             style: {
               stroke: 'var(--color-border-secondary)',
               strokeWidth: 1
@@ -443,7 +408,7 @@ export const NetworkMapPage: React.FC = () => {
             border: `1px solid ${getHostBorderColor()}`,
             borderRadius: 'var(--radius-md)',
             padding: '8px',
-            width: 120,
+            width: NODE_DIMENSIONS.HOST[nodeSize],
             fontSize: '10px'
           }
         });
@@ -453,6 +418,7 @@ export const NetworkMapPage: React.FC = () => {
           source: bridgeId,
           target: hostId,
           type: 'smoothstep',
+          className: 'edge-tertiary',
           style: {
             stroke: 'var(--color-border-secondary)',
             strokeWidth: 1
@@ -509,7 +475,7 @@ export const NetworkMapPage: React.FC = () => {
           border: `2px solid ${iface.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)'}`,
           borderRadius: 'var(--radius-md)',
           padding: '12px',
-          width: showDetailedInfo ? 160 : 140,
+          width: NODE_DIMENSIONS.INTERFACE[nodeSize],
           fontSize: '12px'
         }
       });
@@ -520,6 +486,7 @@ export const NetworkMapPage: React.FC = () => {
         target: interfaceId,
         type: 'smoothstep',
         animated: iface.status === 'up',
+        className: 'edge-primary',
         style: {
           stroke: iface.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
           strokeWidth: 2
@@ -539,12 +506,6 @@ export const NetworkMapPage: React.FC = () => {
           return interfaceMatch && validStatus && isValid;
         }
       );
-
-      if (hostsOnInterface.length > 0) {
-        console.log(`Standalone interface ${iface.name}: Found ${hostsOnInterface.length} hosts`,
-          hostsOnInterface.map(h => ({ ip: h.address, mac: h.macAddress, status: h.status }))
-        );
-      }
 
       hostsOnInterface.forEach((host) => {
         const hostId = `host-${host.id}`;
@@ -574,7 +535,7 @@ export const NetworkMapPage: React.FC = () => {
             border: `1px solid ${getHostBorderColor()}`,
             borderRadius: 'var(--radius-md)',
             padding: '8px',
-            width: 120,
+            width: NODE_DIMENSIONS.HOST[nodeSize],
             fontSize: '10px'
           }
         });
@@ -584,6 +545,7 @@ export const NetworkMapPage: React.FC = () => {
           source: interfaceId,
           target: hostId,
           type: 'smoothstep',
+          className: 'edge-tertiary',
           style: {
             stroke: 'var(--color-border-secondary)',
             strokeWidth: 1
@@ -596,19 +558,19 @@ export const NetworkMapPage: React.FC = () => {
       });
     });
 
-    // Apply layout algorithm
-    const layoutedNodes = applyLayout(layoutType, newNodes, newEdges);
+    return { nodes: newNodes, edges: newEdges };
+  }, [topology, showActiveInterfaces, showInactiveInterfaces, showDetailedInfo, nodeSize]);
 
-    // Debug summary
-    const hostCount = newNodes.filter(n => n.id.startsWith('host-')).length;
-    const interfaceCount = newNodes.filter(n => n.id.startsWith('interface-')).length;
-    const bridgeCount = bridges.length;
-    console.log(`Network Map: ${bridgeCount} bridges, ${interfaceCount} interfaces (${bridgeMemberNames.size} bridge members), ${hostCount} hosts displayed`);
-    console.log('=== End Debug ===\n');
+  // Memoize layout application
+  const layoutedNodes = useMemo(() => {
+    return applyLayout(layoutType, constructedNodes, constructedEdges);
+  }, [layoutType, constructedNodes, constructedEdges]);
 
+  // Update ReactFlow state when layout changes
+  useEffect(() => {
     setNodes(layoutedNodes);
-    setEdges(newEdges);
-  }, [topology, layoutType, showActiveInterfaces, showInactiveInterfaces, showDetailedInfo, setNodes, setEdges]);
+    setEdges(constructedEdges);
+  }, [layoutedNodes, constructedEdges, setNodes, setEdges]);
 
   if (loading) {
     return (
@@ -638,15 +600,67 @@ export const NetworkMapPage: React.FC = () => {
     );
   }
 
-  // Handle layout change
-  const handleLayoutChange = (newLayout: LayoutType) => {
-    setLayoutType(newLayout);
+  // Template management handlers
+  const handleSaveTemplate = () => {
+    setTemplateModalMode('save');
+    setIsTemplateModalOpen(true);
   };
 
-  // Handle auto-layout button
-  const handleAutoLayout = () => {
-    const layoutedNodes = applyLayout(layoutType, nodes, edges);
-    setNodes(layoutedNodes);
+  const handleDeleteTemplate = () => {
+    if (!currentTemplate || currentTemplate.isDefault) {
+      alert('Cannot delete default templates');
+      return;
+    }
+    if (confirm(`Delete template "${currentTemplate.name}"?`)) {
+      deleteTemplate(currentTemplate.id);
+    }
+  };
+
+  const handleExportTemplates = () => {
+    const jsonString = exportTemplates();
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `network-map-templates-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportTemplates = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const result = importTemplates(text);
+
+        if (result.success) {
+          alert(`Successfully imported ${result.count} template(s)`);
+          refreshTemplates();
+        } else {
+          alert(`Import failed: ${result.error}`);
+        }
+      } catch (error) {
+        alert('Failed to read file');
+      }
+    };
+    input.click();
+  };
+
+  const handleSaveTemplateFromModal = (name: string, description: string) => {
+    saveAsTemplate(name, description);
+    setIsTemplateModalOpen(false);
+  };
+
+  const handleCancelTemplateModal = () => {
+    setIsTemplateModalOpen(false);
   };
 
   return (
@@ -655,25 +669,92 @@ export const NetworkMapPage: React.FC = () => {
         <h1 className={styles.title}>Network Map</h1>
 
         <div className={styles.headerControls}>
+          <div className={styles.templateControls}>
+            <label className={styles.templateLabel}>Template:</label>
+            <select
+              className={styles.templateSelect}
+              value={currentTemplate?.id || ''}
+              onChange={(e) => applyTemplate(e.target.value)}
+              title="Select a network map template"
+            >
+              <option value="">Custom Configuration</option>
+              <optgroup label="Default Templates">
+                {allTemplates.filter(t => t.isDefault).map(template => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </optgroup>
+              {allTemplates.some(t => !t.isDefault) && (
+                <optgroup label="Custom Templates">
+                  {allTemplates.filter(t => !t.isDefault).map(template => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+
+            <div className={styles.templateActions}>
+              <button
+                className={styles.iconButton}
+                onClick={handleSaveTemplate}
+                title="Save current settings as a template"
+              >
+                <SaveOutlined />
+              </button>
+              <button
+                className={styles.iconButton}
+                onClick={handleDeleteTemplate}
+                disabled={!currentTemplate || currentTemplate.isDefault}
+                title="Delete current custom template"
+              >
+                <DeleteOutlined />
+              </button>
+              <button
+                className={styles.iconButton}
+                onClick={handleImportTemplates}
+                title="Import templates from file"
+              >
+                <UploadOutlined />
+              </button>
+              <button
+                className={styles.iconButton}
+                onClick={handleExportTemplates}
+                title="Export templates to file"
+              >
+                <ExportOutlined />
+              </button>
+            </div>
+          </div>
+
           <div className={styles.stats}>
             <div className={styles.statItem}>
-              <span className={styles.statLabel}>Interfaces:</span>
-              <div className={styles.interfaceTags}>
-                <button
-                  className={`${styles.interfaceTag} ${styles.tagActive} ${!showActiveInterfaces ? styles.tagHidden : ''}`}
-                  onClick={() => setShowActiveInterfaces(!showActiveInterfaces)}
-                  title="Click to toggle active interfaces"
-                >
-                  Active: {topology.interfaces.filter(i => i.status === 'up').length}
-                </button>
-                <button
-                  className={`${styles.interfaceTag} ${styles.tagInactive} ${!showInactiveInterfaces ? styles.tagHidden : ''}`}
-                  onClick={() => setShowInactiveInterfaces(!showInactiveInterfaces)}
-                  title="Click to toggle inactive interfaces"
-                >
-                  Inactive: {topology.interfaces.filter(i => i.status !== 'up').length}
-                </button>
-              </div>
+              <span className={styles.statLabel}>Active:</span>
+              <span className={styles.statValue}>
+                {topology.interfaces.filter(i => i.status === 'up').length}
+              </span>
+              <button
+                className={styles.iconToggle}
+                onClick={() => setFilters({ ...filters, showActiveInterfaces: !showActiveInterfaces })}
+                title={showActiveInterfaces ? 'Hide active interfaces' : 'Show active interfaces'}
+              >
+                {showActiveInterfaces ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+              </button>
+            </div>
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>Inactive:</span>
+              <span className={styles.statValue}>
+                {topology.interfaces.filter(i => i.status !== 'up').length}
+              </span>
+              <button
+                className={styles.iconToggle}
+                onClick={() => setFilters({ ...filters, showInactiveInterfaces: !showInactiveInterfaces })}
+                title={showInactiveInterfaces ? 'Hide inactive interfaces' : 'Show inactive interfaces'}
+              >
+                {showInactiveInterfaces ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+              </button>
             </div>
             <div className={styles.statItem}>
               <span className={styles.statLabel}>Devices:</span>
@@ -693,40 +774,10 @@ export const NetworkMapPage: React.FC = () => {
                 </span>
               </div>
             )}
-            {speedTestResults && (
-              <>
-                <div className={styles.statItem}>
-                  <span className={styles.statLabel}>Latency:</span>
-                  <span className={styles.statValue}>{speedTestResults.latency}ms</span>
-                </div>
-                <div className={styles.statItem}>
-                  <span className={styles.statLabel}>Download:</span>
-                  <span className={styles.statValue}>{speedTestResults.downloadSpeed} Mbps</span>
-                </div>
-              </>
-            )}
           </div>
 
           <div className={styles.controlsGroup}>
-            <div className={styles.layoutControls}>
-              <label className={styles.layoutLabel}>Layout:</label>
-              <select
-                className={styles.layoutSelect}
-                value={layoutType}
-                onChange={(e) => handleLayoutChange(e.target.value as LayoutType)}
-              >
-                <option value="radial">Radial (Concentric)</option>
-                <option value="force">Force-Directed</option>
-                <option value="hierarchical">Hierarchical (Tree)</option>
-                <option value="grid">Grid</option>
-              </select>
-              <Button
-                variant="secondary"
-                size="small"
-                onClick={handleAutoLayout}
-              >
-                Re-layout
-              </Button>
+            <div className={styles.actionControls}>
               <Button
                 variant="primary"
                 size="small"
@@ -735,23 +786,22 @@ export const NetworkMapPage: React.FC = () => {
               >
                 {scanning ? 'Scanning...' : 'Scan Network'}
               </Button>
-              <Button
-                variant="primary"
-                size="small"
-                onClick={handleSpeedTest}
-                disabled={speedTesting}
-              >
-                {speedTesting ? 'Testing...' : 'Speed Test'}
-              </Button>
             </div>
 
             <div className={styles.filterControls}>
               <div className={styles.toggleGroup}>
                 <Toggle
                   checked={showDetailedInfo}
-                  onChange={setShowDetailedInfo}
+                  onChange={(checked) => setFilters({ ...filters, showDetailedInfo: checked })}
                 />
                 <label className={styles.toggleLabel}>Show Details</label>
+              </div>
+              <div className={styles.toggleGroup}>
+                <Toggle
+                  checked={visualization.showLegend}
+                  onChange={(checked) => setVisualization({ ...visualization, showLegend: checked })}
+                />
+                <label className={styles.toggleLabel}>Show Legend</label>
               </div>
             </div>
           </div>
@@ -780,6 +830,19 @@ export const NetworkMapPage: React.FC = () => {
           />
         </ReactFlow>
       </div>
+
+      <TemplateEditorModal
+        isOpen={isTemplateModalOpen}
+        mode={templateModalMode}
+        onSave={handleSaveTemplateFromModal}
+        onCancel={handleCancelTemplateModal}
+      />
+
+      <NetworkMapLegend
+        isVisible={visualization.showLegend}
+        position="top-left"
+        onToggle={() => setVisualization({ ...visualization, showLegend: !visualization.showLegend })}
+      />
     </div>
   );
 };
