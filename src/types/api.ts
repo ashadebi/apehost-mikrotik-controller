@@ -98,6 +98,17 @@ export interface ArpEntry {
   comment?: string;
 }
 
+export interface BridgeHost {
+  id: string;
+  bridge: string;
+  macAddress: string;
+  interface: string; // Physical port where this MAC was learned
+  local: boolean;
+  dynamic: boolean;
+  external: boolean;
+  age?: string;
+}
+
 export interface SystemResources {
   cpu: {
     load: number;

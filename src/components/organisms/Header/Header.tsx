@@ -20,6 +20,7 @@ export const Header: React.FC<HeaderProps> = () => {
   const [speedTestResults, setSpeedTestResults] = useState<{
     latency: number;
     downloadSpeed: number;
+    uploadSpeed: number;
     testServer: string;
     timestamp: string;
   } | null>(null);
@@ -163,9 +164,14 @@ export const Header: React.FC<HeaderProps> = () => {
           >
             <ThunderboltOutlined
               className={`${styles.speedTestIcon} ${speedTesting ? styles.glowing : ''}`}
-              style={{ color: speedTesting ? 'var(--color-accent-warning)' : 'var(--color-accent-primary)' }}
+              style={{ color: 'var(--color-accent-primary)' }}
             />
-            {speedTestResults && (
+            {speedTesting && (
+              <div className={styles.speedTestResults}>
+                <span className={styles.speedTestRunning}>Running Speed Test...</span>
+              </div>
+            )}
+            {!speedTesting && speedTestResults && (
               <div className={styles.speedTestResults}>
                 <div className={styles.speedTestItem}>
                   <span className={styles.speedTestLabel}>Latency:</span>

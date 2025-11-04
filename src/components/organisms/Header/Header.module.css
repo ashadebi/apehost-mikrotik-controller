@@ -74,6 +74,8 @@
 }
 
 .speedTestButton.testing {
+  width: auto;
+  padding: 0 var(--space-md);
   border-color: var(--color-accent-warning);
   box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
 }
@@ -163,6 +165,13 @@
   font-weight: 600;
   color: var(--color-accent-primary);
   font-family: var(--font-mono);
+}
+
+.speedTestRunning {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-accent-primary);
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 .connectionStatus {

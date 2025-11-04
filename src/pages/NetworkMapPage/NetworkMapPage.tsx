@@ -8,13 +8,15 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   MarkerType,
-  ConnectionLineType
+  ConnectionLineType,
+  EdgeTypes
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Spin, Alert } from 'antd';
 import { SaveOutlined, DeleteOutlined, UploadOutlined, ExportOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { InterfaceTypeIcon } from '../../components/atoms/InterfaceTypeIcon/InterfaceTypeIcon';
-import { NetworkInterface, ArpEntry, RouterStatus } from '../../types/api';
+import { TrafficFlowEdge } from '../../components/atoms/TrafficFlowEdge';
+import { NetworkInterface, ArpEntry, BridgeHost, RouterStatus } from '../../types/api';
 import { applyLayout } from '../../utils/networkLayouts';
 import { Button } from '../../components/atoms/Button/Button';
 import { Toggle } from '../../components/atoms/Toggle/Toggle';
@@ -29,7 +31,13 @@ interface NetworkTopology {
   router: RouterStatus | null;
   interfaces: NetworkInterface[];
   arpTable: ArpEntry[];
+  bridgeHosts: BridgeHost[];
 }
+
+// Define custom edge types
+const edgeTypes: EdgeTypes = {
+  traffic: TrafficFlowEdge,
+};
 
 export const NetworkMapPage: React.FC = () => {
   // Use custom preference hook
@@ -56,10 +64,12 @@ export const NetworkMapPage: React.FC = () => {
   const [topology, setTopology] = useState<NetworkTopology>({
     router: null,
     interfaces: [],
-    arpTable: []
+    arpTable: [],
+    bridgeHosts: []
   });
   const [scanning, setScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
+  const [vizMenuOpen, setVizMenuOpen] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -70,6 +80,7 @@ export const NetworkMapPage: React.FC = () => {
   const showDetailedInfo = filters.showDetailedInfo;
   const layoutType = layoutConfig.type;
   const nodeSize = layoutConfig.nodeSize;
+  const showTrafficFlow = visualization.showTrafficFlow ?? true;
 
   // Load network topology data
   const loadTopology = useCallback(async () => {
@@ -77,21 +88,23 @@ export const NetworkMapPage: React.FC = () => {
     setError(null);
 
     try {
-      const [routerRes, interfacesRes, arpRes] = await Promise.all([
+      const [routerRes, interfacesRes, arpRes, bridgeHostsRes] = await Promise.all([
         fetch('/api/router/status'),
         fetch('/api/router/interfaces'),
-        fetch('/api/router/ip/arp')
+        fetch('/api/router/ip/arp'),
+        fetch('/api/router/interface/bridge/host')
       ]);
 
-      if (!routerRes.ok || !interfacesRes.ok || !arpRes.ok) {
+      if (!routerRes.ok || !interfacesRes.ok || !arpRes.ok || !bridgeHostsRes.ok) {
         throw new Error('Failed to fetch network data');
       }
 
       const router = await routerRes.json();
       const interfaces = await interfacesRes.json();
       const arpTable = await arpRes.json();
+      const bridgeHosts = await bridgeHostsRes.json();
 
-      setTopology({ router, interfaces, arpTable });
+      setTopology({ router, interfaces, arpTable, bridgeHosts });
     } catch (err) {
       console.error('Failed to load network topology:', err);
       setError('Failed to load network topology. Please check your connection.');
@@ -232,14 +245,20 @@ export const NetworkMapPage: React.FC = () => {
         }
       });
 
-      // Edge from router to bridge
+      // Edge from router to bridge with traffic data
       newEdges.push({
         id: `router-${bridgeId}`,
         source: 'router',
         target: bridgeId,
-        type: 'smoothstep',
+        type: showTrafficFlow ? 'traffic' : 'smoothstep',
         animated: bridge.status === 'up',
         className: 'edge-primary',
+        data: showTrafficFlow ? {
+          traffic: {
+            rxRate: bridge.rxRate || 0,
+            txRate: bridge.txRate || 0,
+          }
+        } : undefined,
         style: {
           stroke: bridge.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
           strokeWidth: 3
@@ -286,14 +305,20 @@ export const NetworkMapPage: React.FC = () => {
           }
         });
 
-        // Edge from bridge to member port
+        // Edge from bridge to member port with traffic data
         newEdges.push({
           id: `${bridgeId}-${portId}`,
           source: bridgeId,
           target: portId,
-          type: 'smoothstep',
+          type: showTrafficFlow ? 'traffic' : 'smoothstep',
           animated: port.status === 'up',
           className: 'edge-secondary',
+          data: showTrafficFlow ? {
+            traffic: {
+              rxRate: port.rxRate || 0,
+              txRate: port.txRate || 0,
+            }
+          } : undefined,
           style: {
             stroke: port.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
             strokeWidth: 2,
@@ -306,6 +331,7 @@ export const NetworkMapPage: React.FC = () => {
         });
 
         // Add hosts connected to this bridge port
+        // First, find hosts directly on this port
         const hostsOnPort = topology.arpTable.filter(
           arp => {
             const interfaceMatch = arp.interface.trim().toLowerCase() === port.name.trim().toLowerCase();
@@ -315,7 +341,33 @@ export const NetworkMapPage: React.FC = () => {
           }
         );
 
-        hostsOnPort.forEach((host) => {
+        // Also find hosts that show bridge as interface but are actually on this port
+        // (according to bridge FDB)
+        const hostsViaBridge = topology.arpTable.filter(
+          arp => {
+            // Check if ARP shows bridge as interface
+            const arpShowsBridge = arp.interface.trim().toLowerCase() === bridge.name.trim().toLowerCase();
+            if (!arpShowsBridge) return false;
+
+            const validStatus = ['reachable', 'stale', 'delay'].includes(arp.status);
+            const isValid = !arp.disabled && !arp.invalid;
+            if (!validStatus || !isValid) return false;
+
+            // Look up MAC in bridge FDB to find physical port
+            const bridgeHost = topology.bridgeHosts.find(
+              bh => bh.macAddress.trim().toUpperCase() === arp.macAddress.trim().toUpperCase() &&
+                    bh.bridge.trim().toLowerCase() === bridge.name.trim().toLowerCase()
+            );
+
+            // Check if this MAC is learned on this specific port
+            return bridgeHost && bridgeHost.interface.trim().toLowerCase() === port.name.trim().toLowerCase();
+          }
+        );
+
+        // Combine both lists
+        const allHostsOnPort = [...hostsOnPort, ...hostsViaBridge];
+
+        allHostsOnPort.forEach((host) => {
           const hostId = `host-${host.id}`;
 
           const getHostBorderColor = () => {
@@ -363,70 +415,6 @@ export const NetworkMapPage: React.FC = () => {
               color: 'var(--color-border-secondary)'
             }
           });
-        });
-      });
-
-      // Add hosts connected directly to the bridge interface
-      const hostsOnBridge = topology.arpTable.filter(
-        arp => {
-          const interfaceMatch = arp.interface.trim().toLowerCase() === bridge.name.trim().toLowerCase();
-          const validStatus = ['reachable', 'stale', 'delay'].includes(arp.status);
-          const isValid = !arp.disabled && !arp.invalid;
-          // Don't add if already added via a member port
-          const notOnMemberPort = !memberPorts.some(
-            port => arp.interface.trim().toLowerCase() === port.name.trim().toLowerCase()
-          );
-          return interfaceMatch && validStatus && isValid && notOnMemberPort;
-        }
-      );
-
-      hostsOnBridge.forEach((host) => {
-        const hostId = `host-${host.id}`;
-
-        const getHostBorderColor = () => {
-          if (host.status === 'reachable') return 'var(--color-accent-success)';
-          if (host.status === 'stale') return 'var(--color-accent-primary)';
-          return 'var(--color-border-primary)';
-        };
-
-        newNodes.push({
-          id: hostId,
-          type: 'default',
-          position: { x: 0, y: 0 },
-          data: {
-            label: (
-              <div className={styles.hostNode}>
-                <div className={styles.nodeTitle}>{host.address}</div>
-                <div className={styles.nodeSubtitle}>{host.macAddress.substring(0, 17)}</div>
-                <div className={styles.hostStatus}>{host.status}</div>
-              </div>
-            )
-          },
-          style: {
-            background: 'var(--color-bg-secondary)',
-            color: 'var(--color-text-primary)',
-            border: `1px solid ${getHostBorderColor()}`,
-            borderRadius: 'var(--radius-md)',
-            padding: '8px',
-            width: NODE_DIMENSIONS.HOST[nodeSize],
-            fontSize: '10px'
-          }
-        });
-
-        newEdges.push({
-          id: `${bridgeId}-${hostId}`,
-          source: bridgeId,
-          target: hostId,
-          type: 'smoothstep',
-          className: 'edge-tertiary',
-          style: {
-            stroke: 'var(--color-border-secondary)',
-            strokeWidth: 1
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: 'var(--color-border-secondary)'
-          }
         });
       });
     });
@@ -480,13 +468,20 @@ export const NetworkMapPage: React.FC = () => {
         }
       });
 
+      // Edge from router to standalone interface with traffic data
       newEdges.push({
         id: `router-${interfaceId}`,
         source: 'router',
         target: interfaceId,
-        type: 'smoothstep',
+        type: showTrafficFlow ? 'traffic' : 'smoothstep',
         animated: iface.status === 'up',
         className: 'edge-primary',
+        data: showTrafficFlow ? {
+          traffic: {
+            rxRate: iface.rxRate || 0,
+            txRate: iface.txRate || 0,
+          }
+        } : undefined,
         style: {
           stroke: iface.status === 'up' ? 'var(--color-accent-success)' : 'var(--color-border-primary)',
           strokeWidth: 2
@@ -559,7 +554,7 @@ export const NetworkMapPage: React.FC = () => {
     });
 
     return { nodes: newNodes, edges: newEdges };
-  }, [topology, showActiveInterfaces, showInactiveInterfaces, showDetailedInfo, nodeSize]);
+  }, [topology, showActiveInterfaces, showInactiveInterfaces, showDetailedInfo, nodeSize, showTrafficFlow]);
 
   // Memoize layout application
   const layoutedNodes = useMemo(() => {
@@ -788,21 +783,40 @@ export const NetworkMapPage: React.FC = () => {
               </Button>
             </div>
 
-            <div className={styles.filterControls}>
-              <div className={styles.toggleGroup}>
-                <Toggle
-                  checked={showDetailedInfo}
-                  onChange={(checked) => setFilters({ ...filters, showDetailedInfo: checked })}
-                />
-                <label className={styles.toggleLabel}>Show Details</label>
-              </div>
-              <div className={styles.toggleGroup}>
-                <Toggle
-                  checked={visualization.showLegend}
-                  onChange={(checked) => setVisualization({ ...visualization, showLegend: checked })}
-                />
-                <label className={styles.toggleLabel}>Show Legend</label>
-              </div>
+            <div className={styles.visualizationMenu}>
+              <button
+                className={styles.menuToggle}
+                onClick={() => setVizMenuOpen(!vizMenuOpen)}
+                aria-expanded={vizMenuOpen}
+                aria-label="Toggle visualization options"
+              >
+                ⚙
+              </button>
+              {vizMenuOpen && (
+                <div className={styles.menuDropdown}>
+                  <div className={styles.menuItem}>
+                    <Toggle
+                      checked={showDetailedInfo}
+                      onChange={(checked) => setFilters({ ...filters, showDetailedInfo: checked })}
+                    />
+                    <label className={styles.menuLabel}>Show Details</label>
+                  </div>
+                  <div className={styles.menuItem}>
+                    <Toggle
+                      checked={visualization.showLegend}
+                      onChange={(checked) => setVisualization({ ...visualization, showLegend: checked })}
+                    />
+                    <label className={styles.menuLabel}>Show Legend</label>
+                  </div>
+                  <div className={styles.menuItem}>
+                    <Toggle
+                      checked={showTrafficFlow}
+                      onChange={(checked) => setVisualization({ ...visualization, showTrafficFlow: checked })}
+                    />
+                    <label className={styles.menuLabel}>Show Traffic Flow</label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -814,6 +828,7 @@ export const NetworkMapPage: React.FC = () => {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          edgeTypes={edgeTypes}
           connectionLineType={ConnectionLineType.SmoothStep}
           fitView
           attributionPosition="bottom-left"

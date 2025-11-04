@@ -44,6 +44,11 @@ export const NetworkMapLegend: React.FC<NetworkMapLegendProps> = ({
     { label: 'Host Connection', color: 'var(--color-border-secondary)', borderStyle: 'solid', type: 'edge' },
   ];
 
+  const trafficIndicators: LegendItem[] = [
+    { label: 'Incoming Traffic (RX)', color: 'var(--color-accent-success)', icon: '↓', type: 'status' },
+    { label: 'Outgoing Traffic (TX)', color: 'var(--color-accent-primary)', icon: '↑', type: 'status' },
+  ];
+
   return (
     <div className={`${styles.legend} ${styles[position]} ${isCollapsed ? styles.collapsed : ''}`}>
       <div className={styles.header}>
@@ -120,6 +125,27 @@ export const NetworkMapLegend: React.FC<NetworkMapLegendProps> = ({
                         : `2px solid ${item.color}`,
                     }}
                   />
+                  <span className={styles.label}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <h4 className={styles.sectionTitle}>Traffic Flow</h4>
+            <div className={styles.items}>
+              {trafficIndicators.map((item) => (
+                <div key={item.label} className={styles.item}>
+                  <div
+                    className={styles.trafficIndicator}
+                    style={{
+                      color: item.color,
+                      backgroundColor: `${item.color}20`,
+                      border: `1px solid ${item.color}`,
+                    }}
+                  >
+                    {item.icon}
+                  </div>
                   <span className={styles.label}>{item.label}</span>
                 </div>
               ))}

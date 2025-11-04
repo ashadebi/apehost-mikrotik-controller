@@ -37,6 +37,7 @@ export interface VisualizationOptions {
   showLabels: boolean;
   groupBridges: boolean; // Visual grouping of bridge members
   showLegend: boolean;
+  showTrafficFlow: boolean; // Show animated traffic flow on edges
 }
 
 /**

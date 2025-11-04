@@ -163,6 +163,23 @@ routerRoutes.get('/ip/arp', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/router/interface/bridge/host
+ * Get bridge host table (MAC addresses learned on bridge ports)
+ */
+routerRoutes.get('/interface/bridge/host', async (req: Request, res: Response) => {
+  try {
+    const bridgeHosts = await mikrotikService.getBridgeHosts();
+    res.json(bridgeHosts);
+  } catch (error: any) {
+    console.error('Error fetching bridge hosts:', error);
+    res.status(500).json({
+      error: 'Failed to fetch bridge hosts',
+      message: error.message
+    });
+  }
+});
+
+/**
  * GET /api/router/export
  * Export router configuration as .rsc file
  */

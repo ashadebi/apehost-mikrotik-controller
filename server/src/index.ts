@@ -705,6 +705,16 @@ Example queries and correct actions (CALL means execute via function calling):
         // Add assistant message to conversation
         conversationManager.addMessage(conversationId, 'assistant', fullResponse);
 
+        // Phase 3.5: Clear pending evaluations after AI response
+        // The AI has now had a chance to evaluate recommendations in this turn
+        const pendingEvals = conversationManager.getPendingEvaluations(conversationId);
+        if (pendingEvals.length > 0) {
+          pendingEvals.forEach(pendingEval => {
+            conversationManager.clearPendingEvaluation(conversationId, pendingEval.recommendation_id);
+          });
+          console.log(`[Assistant] Cleared ${pendingEvals.length} pending evaluation(s) after AI response`);
+        }
+
         // Emit completion with token usage
         socket.emit('assistant:complete', {
           conversationId,

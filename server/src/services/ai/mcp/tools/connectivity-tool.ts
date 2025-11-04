@@ -434,66 +434,29 @@ export class ConnectivityTool extends BaseMCPTool {
   }
 
   private async performInternetSpeedTest(params: Record<string, unknown>, startTime: number): Promise<ToolResult> {
-    // Test server defaults - can be overridden with address parameter
-    const testServer = (params.address as string) || '1.1.1.1'; // Cloudflare DNS
-    const testUrl = 'https://speed.cloudflare.com/__down?bytes=25000000'; // 25MB download test
-
-    const insights: string[] = [
-      'Internet speed test in progress',
-      `Test server: ${testServer}`,
-    ];
+    const insights: string[] = ['Internet speed test in progress'];
     const warnings: string[] = [];
     const recommendations: string[] = [];
 
-    // Test 1: Latency with ping
+    // Use the proper speed test implementation from mikrotikService
+    // This includes correct time parsing, 100MB download test, and all fixes
     let latency = 0;
-    try {
-      const pingResult = await mikrotikService.executeCommand('/ping', {
-        address: testServer,
-        count: 4
-      });
-
-      if (pingResult && pingResult.length > 0) {
-        // Calculate average latency from ping results
-        const times = pingResult
-          .filter((r: any) => r.time && !r.timeout)
-          .map((r: any) => {
-            const timeStr = r.time.replace('ms', '');
-            return parseFloat(timeStr);
-          })
-          .filter((t: number) => !isNaN(t) && t > 0);
-
-        if (times.length > 0) {
-          latency = Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10;
-          insights.push(`Latency: ${latency}ms`);
-        } else {
-          warnings.push('Unable to measure latency - no successful ping responses');
-        }
-      }
-    } catch (error) {
-      warnings.push('Latency test failed - ping command error');
-      console.warn('Ping test failed:', error);
-    }
-
-    // Test 2: Download speed with fetch
     let downloadSpeed = 0;
+    let testServer = 'speed.cloudflare.com';
+
     try {
-      const fetchStartTime = Date.now();
+      const speedTestResult = await mikrotikService.performSpeedTest();
 
-      await mikrotikService.executeCommand('/tool/fetch', {
-        url: testUrl,
-        mode: 'https',
-        'keep-result': 'no'
-      });
+      latency = speedTestResult.latency;
+      downloadSpeed = speedTestResult.downloadSpeed;
+      testServer = speedTestResult.testServer;
 
-      const duration = (Date.now() - fetchStartTime) / 1000; // seconds
-      const fileSizeMB = 25; // 25MB
-      downloadSpeed = Math.round((fileSizeMB * 8 / duration) * 100) / 100; // Mbps
-
+      insights.push(`Test server: ${testServer}`);
+      insights.push(`Latency: ${latency}ms`);
       insights.push(`Download speed: ${downloadSpeed.toFixed(2)} Mbps`);
     } catch (error) {
-      warnings.push('Download speed test failed - fetch command error');
-      console.warn('Download test failed:', error);
+      warnings.push('Internet speed test failed');
+      console.warn('Speed test failed:', error);
     }
 
     // Quality assessment and recommendations

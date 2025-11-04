@@ -1,0 +1,79 @@
+.edgePath {
+  transition: stroke-width var(--transition-fast);
+}
+
+.trafficFlowRx,
+.trafficFlowTx {
+  pointer-events: none;
+}
+
+.trafficFlowRx circle {
+  filter: drop-shadow(0 0 3px var(--color-accent-success));
+}
+
+.trafficFlowTx circle {
+  filter: drop-shadow(0 0 3px var(--color-accent-primary));
+}
+
+/* Animations for traffic flow */
+@keyframes flowToTarget {
+  0% {
+    opacity: 0;
+    r: 2;
+  }
+  10% {
+    opacity: 0.8;
+    r: 4;
+  }
+  90% {
+    opacity: 0.8;
+    r: 4;
+  }
+  100% {
+    opacity: 0;
+    r: 2;
+  }
+}
+
+@keyframes flowToSource {
+  0% {
+    opacity: 0;
+    r: 2;
+  }
+  10% {
+    opacity: 0.8;
+    r: 4;
+  }
+  90% {
+    opacity: 0.8;
+    r: 4;
+  }
+  100% {
+    opacity: 0;
+    r: 2;
+  }
+}
+
+/* Label styling */
+.labelBackground {
+  fill: rgba(10, 10, 10, 1);
+  stroke: rgba(45, 45, 45, 0.8);
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 6px rgba(0, 0, 0, 0.6));
+}
+
+.labelText {
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+  user-select: none;
+}
+
+.rxLabel {
+  fill: #2dd4bf;
+  font-weight: 700;
+}
+
+.txLabel {
+  fill: #fb923c;
+  font-weight: 700;
+}

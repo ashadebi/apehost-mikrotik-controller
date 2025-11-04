@@ -149,8 +149,25 @@ export const DashboardPage: React.FC = () => {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showActiveInterfaces, setShowActiveInterfaces] = useState(true);
-  const [showInactiveInterfaces, setShowInactiveInterfaces] = useState(true);
+
+  // Load preferences from localStorage, default: active=true, inactive=false
+  const [showActiveInterfaces, setShowActiveInterfaces] = useState(() => {
+    const stored = localStorage.getItem('dashboard.showActiveInterfaces');
+    return stored !== null ? JSON.parse(stored) : true;
+  });
+  const [showInactiveInterfaces, setShowInactiveInterfaces] = useState(() => {
+    const stored = localStorage.getItem('dashboard.showInactiveInterfaces');
+    return stored !== null ? JSON.parse(stored) : false;
+  });
+
+  // Save preferences to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('dashboard.showActiveInterfaces', JSON.stringify(showActiveInterfaces));
+  }, [showActiveInterfaces]);
+
+  useEffect(() => {
+    localStorage.setItem('dashboard.showInactiveInterfaces', JSON.stringify(showInactiveInterfaces));
+  }, [showInactiveInterfaces]);
 
   const fetchRouterStatus = async () => {
     try {

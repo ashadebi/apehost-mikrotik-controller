@@ -61,7 +61,7 @@ Comprehensive settings management with tabbed interface for Server Configuration
 - AI Provider (choose one):
   - **Claude** (Anthropic) - quality, highest cost
   - **Cloudflare Workers AI** - cheaper, function calling support, llama-4-scout-17b-16e model
-  - **LM Studio** - Free local inference with custom models
+  - **LM Studio** - Free local inference with custom models, I had good results with ibm/granite-4-h-tiny at 64,000 context
 
 ### Frontend Setup
 ```bash

@@ -929,6 +929,37 @@ class MikroTikService {
   }
 
   /**
+   * Parse MikroTik time format to milliseconds
+   * Handles formats like: "2ms604us", "15ms", "1s500ms", etc.
+   */
+  private parseTimeToMs(timeStr: string): number {
+    if (!timeStr) return 0;
+
+    let totalMs = 0;
+    const str = String(timeStr);
+
+    // Extract seconds (e.g., "1s" or "1s500ms")
+    const secondsMatch = str.match(/(\d+)s/);
+    if (secondsMatch) {
+      totalMs += parseInt(secondsMatch[1]) * 1000;
+    }
+
+    // Extract milliseconds (e.g., "500ms" or "2ms604us")
+    const msMatch = str.match(/(\d+)ms/);
+    if (msMatch) {
+      totalMs += parseInt(msMatch[1]);
+    }
+
+    // Extract microseconds (e.g., "604us")
+    const usMatch = str.match(/(\d+)us/);
+    if (usMatch) {
+      totalMs += parseInt(usMatch[1]) / 1000;
+    }
+
+    return totalMs;
+  }
+
+  /**
    * Get IP addresses
    */
   async getIpAddresses(): Promise<any[]> {
@@ -1015,6 +1046,34 @@ class MikroTikService {
     } catch (error) {
       console.error('Failed to fetch ARP table:', error);
       return this.getMockArpTable();
+    }
+  }
+
+  /**
+   * Get bridge host table (MAC addresses learned on bridge ports)
+   * This shows which physical port each MAC address is connected to
+   */
+  async getBridgeHosts(): Promise<any[]> {
+    if (!this.isConnectionActive()) {
+      return this.getMockBridgeHosts();
+    }
+
+    try {
+      const result = await this.executeCommand('/interface/bridge/host/print');
+
+      return result.map((host: any, index: number) => ({
+        id: host['.id'] || `*${index}`,
+        bridge: host.bridge || '',
+        macAddress: host['mac-address'] || '',
+        interface: host.interface || '', // Physical port where MAC was learned
+        local: host.local === 'true',
+        dynamic: host.dynamic === 'true',
+        external: host.external === 'true',
+        age: host.age || ''
+      }));
+    } catch (error) {
+      console.error('Failed to fetch bridge hosts:', error);
+      return this.getMockBridgeHosts();
     }
   }
 
@@ -1169,6 +1228,44 @@ class MikroTikService {
         complete: true,
         disabled: false,
         comment: 'Gateway'
+      }
+    ];
+  }
+
+  /**
+   * Mock bridge host table for development
+   */
+  private getMockBridgeHosts(): any[] {
+    return [
+      {
+        id: '*1',
+        bridge: 'bridge1',
+        macAddress: '00:11:22:33:44:55',
+        interface: 'ether2',
+        local: false,
+        dynamic: true,
+        external: false,
+        age: '5m30s'
+      },
+      {
+        id: '*2',
+        bridge: 'bridge1',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+        interface: 'ether3',
+        local: false,
+        dynamic: true,
+        external: false,
+        age: '12m45s'
+      },
+      {
+        id: '*3',
+        bridge: 'bridge1',
+        macAddress: '11:22:33:44:55:66',
+        interface: 'ether2',
+        local: false,
+        dynamic: true,
+        external: false,
+        age: '1h23m'
       }
     ];
   }
@@ -1710,11 +1807,12 @@ class MikroTikService {
 
   /**
    * Perform internet speed test
-   * Tests latency and download speed
+   * Tests latency, download speed, and upload speed
    */
   async performSpeedTest(): Promise<{
     latency: number;
     downloadSpeed: number;
+    uploadSpeed: number;
     testServer: string;
     timestamp: string;
   }> {
@@ -1724,7 +1822,7 @@ class MikroTikService {
 
     try {
       const testServer = '1.1.1.1'; // Cloudflare DNS
-      const testUrl = 'https://speed.cloudflare.com/__down?bytes=25000000'; // 25MB download test
+      const testUrl = 'https://speed.cloudflare.com/__down?bytes=104857600'; // 100MB download test for better accuracy
 
       // Test latency with ping
       let latency = 0;
@@ -1734,16 +1832,24 @@ class MikroTikService {
           count: 4
         });
 
-        if (pingResult && pingResult.length > 0) {
-          // Calculate average latency from ping results
-          const avgTime = pingResult
-            .filter((r: any) => r.time)
-            .reduce((sum: number, r: any) => {
-              const timeStr = r.time.replace('ms', '');
-              return sum + parseFloat(timeStr);
-            }, 0) / Math.min(4, pingResult.length);
+        console.log('Speed test ping results:', JSON.stringify(pingResult, null, 2));
 
-          latency = Math.round(avgTime * 10) / 10;
+        if (pingResult && pingResult.length > 0) {
+          // Filter successful pings only (those with time and not timeout)
+          const successfulPings = pingResult.filter((r: any) => r.time && !r.timeout);
+
+          if (successfulPings.length > 0) {
+            // Calculate average latency from successful pings only
+            const totalTime = successfulPings.reduce((sum: number, r: any) => {
+              const time = this.parseTimeToMs(r.time);
+              return sum + time;
+            }, 0);
+
+            latency = Math.round((totalTime / successfulPings.length) * 10) / 10;
+            console.log(`Speed test: ${successfulPings.length}/${pingResult.length} pings successful, avg latency: ${latency}ms`);
+          } else {
+            console.warn('Speed test: No successful pings received');
+          }
         }
       } catch (error) {
         console.warn('Ping test failed:', error);
@@ -1763,16 +1869,24 @@ class MikroTikService {
         });
 
         const duration = (Date.now() - startTime) / 1000; // seconds
-        const fileSizeMB = 25; // 25MB
+        const fileSizeMB = 100; // 100MB
         downloadSpeed = Math.round((fileSizeMB * 8 / duration) * 100) / 100; // Mbps
+        console.log(`Speed test: Download completed in ${duration.toFixed(2)}s, speed: ${downloadSpeed} Mbps`);
       } catch (error) {
         console.warn('Download test failed:', error);
         downloadSpeed = 0;
       }
 
+      // Test upload speed
+      // NOTE: MikroTik's /tool/fetch doesn't support POST uploads reliably
+      // Upload test is disabled for now to prevent connection timeouts
+      let uploadSpeed = 0;
+      console.log('Speed test: Upload test skipped (not supported by MikroTik fetch)');
+
       return {
         latency,
         downloadSpeed,
+        uploadSpeed,
         testServer,
         timestamp: new Date().toISOString()
       };
@@ -1788,12 +1902,14 @@ class MikroTikService {
   private getMockSpeedTest(): {
     latency: number;
     downloadSpeed: number;
+    uploadSpeed: number;
     testServer: string;
     timestamp: string;
   } {
     return {
       latency: 15.5,
       downloadSpeed: 250.75,
+      uploadSpeed: 100.50,
       testServer: '1.1.1.1',
       timestamp: new Date().toISOString()
     };

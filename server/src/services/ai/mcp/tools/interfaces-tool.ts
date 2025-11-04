@@ -15,7 +15,7 @@ import mikrotikService from '../../../mikrotik.js';
 export class InterfacesTool extends BaseMCPTool {
   readonly name = 'get_interfaces';
   readonly description =
-    'Get information about network interfaces including their status, type, and current traffic rates (RX/TX). Use this when the user asks about interface status, current bandwidth usage monitoring, or interface types. DO NOT use for active speed testing or internet speed measurements - use test_connectivity tool with action=internet-speed-test for that.';
+    'Get network interface information including status, type, current traffic rates (bytes/sec), and TOTAL bandwidth consumed since router boot. Returns RX/TX rates for real-time monitoring and cumulative RX/TX byte counters showing total data transferred. Use this when users ask about: total bandwidth used, cumulative data transfer, bandwidth consumed since reboot, interface status, or current traffic rates. DO NOT use for internet speed testing - use test_connectivity with action=internet-speed-test for that.';
 
   readonly inputSchema: ToolInputSchema = {
     type: 'object',
@@ -45,21 +45,53 @@ export class InterfacesTool extends BaseMCPTool {
 
       const typeFilter = params.type as string | undefined;
 
-      // Execute command to get interfaces
-      let command = '/interface print detail';
+      // Use mikrotikService.getInterfaces() for reliable structured data
+      const allInterfaces = await mikrotikService.getInterfaces();
+
+      // Filter by type if specified
+      let interfaces = allInterfaces;
       if (typeFilter) {
-        command = `/interface ${typeFilter} print detail`;
+        interfaces = allInterfaces.filter(iface =>
+          iface.type.toLowerCase() === typeFilter.toLowerCase()
+        );
       }
 
-      const output = await mikrotikService.executeTerminalCommand(command);
-      const interfaces = this.parseInterfaceOutput(output);
+      // Format data for AI consumption with clear field descriptions
+      const formattedInterfaces = interfaces.map(iface => ({
+        name: iface.name,
+        type: iface.type,
+        status: iface.status,
+        rx_rate_bps: iface.rxRate, // Current receive rate in bytes per second
+        tx_rate_bps: iface.txRate, // Current transmit rate in bytes per second
+        rx_bytes_total: iface.rxBytes, // Total bytes received since boot
+        tx_bytes_total: iface.txBytes, // Total bytes transmitted since boot
+        rx_mb_total: (iface.rxBytes / 1024 / 1024).toFixed(2), // Total MB received
+        tx_mb_total: (iface.txBytes / 1024 / 1024).toFixed(2), // Total MB transmitted
+        rx_gb_total: (iface.rxBytes / 1024 / 1024 / 1024).toFixed(3), // Total GB received
+        tx_gb_total: (iface.txBytes / 1024 / 1024 / 1024).toFixed(3), // Total GB transmitted
+        ip_address: iface.ipAddress,
+        comment: iface.comment,
+        is_bridge: iface.isBridge,
+        bridge_member_of: iface.bridge,
+      }));
 
       const executionTime = Date.now() - startTime;
 
+      // Calculate total bandwidth across all interfaces
+      const totalRxBytes = interfaces.reduce((sum, iface) => sum + iface.rxBytes, 0);
+      const totalTxBytes = interfaces.reduce((sum, iface) => sum + iface.txBytes, 0);
+
       return this.success(
         {
-          interfaces,
-          count: interfaces.length,
+          interfaces: formattedInterfaces,
+          count: formattedInterfaces.length,
+          summary: {
+            total_rx_bytes: totalRxBytes,
+            total_tx_bytes: totalTxBytes,
+            total_rx_gb: (totalRxBytes / 1024 / 1024 / 1024).toFixed(3),
+            total_tx_gb: (totalTxBytes / 1024 / 1024 / 1024).toFixed(3),
+            total_combined_gb: ((totalRxBytes + totalTxBytes) / 1024 / 1024 / 1024).toFixed(3),
+          },
           timestamp: new Date().toISOString(),
         },
         executionTime
@@ -71,35 +103,5 @@ export class InterfacesTool extends BaseMCPTool {
         executionTime
       );
     }
-  }
-
-  private parseInterfaceOutput(output: string): Array<Record<string, unknown>> {
-    // Parse RouterOS interface output
-    // Format is typically multi-line with interface blocks
-
-    const interfaces: Array<Record<string, unknown>> = [];
-    const blocks = output.split(/\n\s*\n/); // Split by empty lines
-
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-
-      const interfaceData: Record<string, unknown> = {};
-      const lines = block.split('\n');
-
-      for (const line of lines) {
-        const match = line.match(/^\s*([^:]+):\s*(.+)$/);
-        if (match) {
-          const key = match[1].trim();
-          const value = match[2].trim();
-          interfaceData[key] = value;
-        }
-      }
-
-      if (Object.keys(interfaceData).length > 0) {
-        interfaces.push(interfaceData);
-      }
-    }
-
-    return interfaces;
   }
 }
