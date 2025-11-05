@@ -102,36 +102,33 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       if (!inline && isRouterOSCommand(code, match?.[1])) {
         return (
           <div className={styles.commandBlock}>
-            <div className={styles.commandHeader}>
-              <span className={styles.commandLabel}>RouterOS Command</span>
-              <div className={styles.commandActions}>
-                <Button
-                  size="small"
-                  icon={<CopyOutlined />}
-                  onClick={() => handleCopyCommand(code)}
-                  title="Copy command"
-                >
-                  Copy
-                </Button>
-                {onRunCommand && (
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<PlayCircleOutlined />}
-                    onClick={() => handleRunCommand(code)}
-                    title="Run this command in terminal"
-                    loading={runningCommand === code}
-                  >
-                    {runningCommand === code ? 'Sent' : 'Run Command'}
-                  </Button>
-                )}
-              </div>
-            </div>
             <pre className={styles.commandCode}>
               <code {...props} className={className}>
                 {children}
               </code>
             </pre>
+            <div className={styles.commandActions}>
+              <Button
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => handleCopyCommand(code)}
+                title="Copy command to clipboard"
+              >
+                Copy to Clipboard
+              </Button>
+              {onRunCommand && (
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={() => handleRunCommand(code)}
+                  title="Execute this command on your router"
+                  loading={runningCommand === code}
+                >
+                  {runningCommand === code ? 'Sent to Terminal' : 'Execute on Router'}
+                </Button>
+              )}
+            </div>
           </div>
         );
       }

@@ -180,6 +180,9 @@ const io = new SocketIOServer(httpServer, {
 // Track interface streaming intervals per socket
 const interfaceStreamingIntervals = new Map<string, NodeJS.Timeout>();
 
+// Track active AI Assistant requests for cancellation support
+const activeAssistantRequests = new Map<string, AbortController>();
+
 // Initialize AI provider (will be loaded async at startup)
 console.log('[Server] AI provider will be initialized at startup...');
 export let aiProvider: Awaited<ReturnType<typeof getGlobalProvider>> = null;
@@ -360,37 +363,25 @@ io.on('connection', (socket) => {
       });
 
       // Get conversation history for LLM
-      let messages = await conversationManager.getMessagesForLLM(conversationId);
-
-      // Get MCP tool definitions for function calling
-      const tools = globalMCPExecutor.getToolDefinitions();
-      console.log(`[Assistant] Providing ${tools.length} MCP tools to LLM:`, tools.map(t => t.name));
+      const messages = await conversationManager.getMessagesForLLM(conversationId);
 
       const assistantMessageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       let fullResponse = '';
 
-      // Track total token usage across all iterations
-      const totalUsage = {
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-      };
+      // Create AbortController for cancellation support
+      const abortController = new AbortController();
+      activeAssistantRequests.set(conversationId, abortController);
 
       try {
-        // Tool execution loop - max 5 iterations to prevent infinite loops
-        const maxIterations = 5;
-        let iteration = 0;
+        console.log(`[Assistant] Starting streaming response with abort support`);
 
-        while (iteration < maxIterations) {
-          iteration++;
-          console.log(`[Assistant] Tool execution iteration ${iteration}/${maxIterations}`);
-
-          // Provide tools on every iteration to allow multi-step reasoning
-          // LLM can call multiple tools until it has enough data to answer
-          const response = await aiProvider.sendMessage(messages, {
-            tools: tools, // Tools available on all iterations
-            maxTokens: 2000,
-            systemPrompt: `You are an AI assistant with direct access to a MikroTik router through specialized tools.
+        // Use streamMessage for real streaming with tool execution
+        const generator = aiProvider.streamMessage(messages, {
+          signal: abortController.signal,
+          sessionId: socket.id,
+          conversationId,
+          maxTokens: 2000,
+          systemPrompt: `You are an AI assistant with direct access to a MikroTik router through specialized tools.
 
 CRITICAL: You have FUNCTION CALLING capabilities. When information is needed, you MUST CALL the appropriate function - DO NOT return function syntax as text to the user.
 
@@ -504,203 +495,45 @@ Example queries and correct actions (CALL means execute via function calling):
 ✓ "check CPU usage" → CALL get_system_resources({"type": "resources"})
 ✓ "RouterOS version" → CALL get_system_resources({"type": "identity"})
 ✓ "how much bandwidth am I using" → CALL get_interfaces (current) or CALL get_traffic (historical)`,
-          });
-
-          // Log tool selection decision for debugging and analytics
-          console.log(`[Assistant] 🎯 TOOL SELECTION DECISION:`, {
-            iteration,
-            userQuery: messages[messages.length - 1]?.content.substring(0, 200),
-            availableTools: tools.length,
-            toolsProvided: tools.map(t => t.name),
-            selectedTools: response.toolCalls?.map(tc => tc.function.name) || 'none',
-            finishReason: response.finishReason,
-            timestamp: new Date().toISOString()
-          });
-
-          // If tools were called, log detailed selection rationale
-          if (response.toolCalls && response.toolCalls.length > 0) {
-            response.toolCalls.forEach((tc, idx) => {
-              console.log(`[Assistant] 🔧 Tool Call #${idx + 1}:`, {
-                toolName: tc.function.name,
-                arguments: tc.function.arguments,
-                callId: tc.id
-              });
-            });
-          } else {
-            console.log(`[Assistant] ℹ️ No tools called - Direct response generation`);
-          }
-
-          console.log(`[Assistant] LLM response - finishReason: ${response.finishReason}, hasToolCalls: ${!!response.toolCalls}`);
-          console.log(`[Assistant] LLM content preview: ${response.content.substring(0, 200)}...`);
-
-          // Accumulate token usage from this iteration
-          if (response.usage) {
-            totalUsage.promptTokens += response.usage.promptTokens;
-            totalUsage.completionTokens += response.usage.completionTokens;
-            totalUsage.totalTokens += response.usage.totalTokens;
-            console.log(`[Assistant] Iteration ${iteration} usage: ${response.usage.promptTokens} prompt + ${response.usage.completionTokens} completion = ${response.usage.totalTokens} total tokens`);
-            console.log(`[Assistant] Cumulative usage: ${totalUsage.totalTokens} total tokens`);
-
-            // Emit live token update to frontend
-            socket.emit('assistant:token-update', {
+          onChunk: (chunk) => {
+            // Emit each chunk in real-time as it arrives from the LLM
+            socket.emit('assistant:stream', {
+              chunk,
               conversationId,
-              promptTokens: totalUsage.promptTokens,
-              completionTokens: totalUsage.completionTokens,
-              totalTokens: totalUsage.totalTokens,
+              messageId: assistantMessageId,
             });
-          }
+          },
+        });
 
-          // If no tool calls, we have the final response
-          if (!response.toolCalls || response.toolCalls.length === 0) {
-            // Filter out thinking blocks from the response
-            let cleanedResponse = response.content;
-
-            // Remove <think>...</think> blocks (case insensitive, multiline)
-            cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?<\/think>/gi, '');
-
-            // Remove <thinking>...</thinking> blocks (case insensitive, multiline)
-            cleanedResponse = cleanedResponse.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-
-            // Remove standalone <think> or </think> tags
-            cleanedResponse = cleanedResponse.replace(/<\/?think>/gi, '');
-            cleanedResponse = cleanedResponse.replace(/<\/?thinking>/gi, '');
-
-            // Trim whitespace and collapse multiple newlines
-            cleanedResponse = cleanedResponse.trim().replace(/\n{3,}/g, '\n\n');
-
-            // If after filtering we have no content, provide a default message
-            if (!cleanedResponse || cleanedResponse.length === 0) {
-              cleanedResponse = 'I understand your request. Let me help you with that.';
-            }
-
-            fullResponse = cleanedResponse;
-
-            // Stream the final response to the client character by character with delay
-            for (const char of fullResponse) {
-              socket.emit('assistant:stream', {
-                chunk: char,
-                conversationId,
-                messageId: assistantMessageId,
-              });
-              // Add small delay for realistic typing animation (5ms per character)
-              await new Promise(resolve => setTimeout(resolve, 5));
-            }
-            break;
-          }
-
-          // Execute tool calls
-          console.log(`[Assistant] Executing ${response.toolCalls.length} tool calls`);
-          const toolResults: any[] = [];
-
-          for (const toolCall of response.toolCalls) {
-            console.log(`[Assistant] Calling tool: ${toolCall.function.name}`);
-
-            try {
-              const args = JSON.parse(toolCall.function.arguments);
-              const startTime = Date.now();
-
-              // Execute tool with proper ToolCall and ToolExecutionContext parameters
-              const result = await globalMCPExecutor.executeTool(
-                {
-                  name: toolCall.function.name,
-                  input: args,
-                  id: toolCall.id,
-                },
-                {
-                  sessionId: socket.id,
-                  conversationId: conversationId,
-                  timestamp: new Date(),
-                }
-              );
-
-              const executionTime = Date.now() - startTime;
-
-              // Track tool execution in conversation metadata
-              conversationManager.trackToolExecution(
-                conversationId,
-                toolCall.function.name,
-                args,
-                result,
-                result.success,
-                executionTime,
-                message
-              );
-
-              toolResults.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name,
-                content: JSON.stringify(result),
-              });
-
-              console.log(`[Assistant] Tool ${toolCall.function.name} executed successfully (${executionTime}ms)`);
-            } catch (error: any) {
-              console.error(`[Assistant] Tool ${toolCall.function.name} failed:`, error.message);
-
-              // Track failed tool execution
-              conversationManager.trackToolExecution(
-                conversationId,
-                toolCall.function.name,
-                {},
-                { error: error.message },
-                false,
-                0,
-                message
-              );
-
-              toolResults.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name,
-                content: JSON.stringify({ error: error.message }),
-              });
-            }
-          }
-
-          // Emit updated metadata to client after tool executions
-          const metadata = conversationManager.getMetadata(conversationId);
-          if (metadata) {
-            socket.emit('assistant:metadata', {
-              conversationId,
-              metadata,
-            });
-          }
-
-          // Add assistant message with tool calls to conversation
-          messages.push({
-            role: 'assistant',
-            content: response.content || '[Tool execution in progress]',
-          });
-
-          // Add tool results as a clear system message with formatted output
-          const toolResultsText = toolResults.map(tr => {
-            const resultData = JSON.parse(tr.content);
-
-            // Extract the actual data from the result wrapper
-            if (resultData.success && resultData.data) {
-              return `TOOL RESULT for ${tr.name}:\n${JSON.stringify(resultData.data, null, 2)}`;
-            } else if (resultData.error) {
-              return `TOOL ERROR for ${tr.name}:\n${resultData.error}`;
-            } else {
-              // Fallback to showing the full result
-              return `TOOL RESULT for ${tr.name}:\n${JSON.stringify(resultData, null, 2)}`;
-            }
-          }).join('\n\n');
-
-          const userMessage = `Here are the results from the tools you called:\n\n${toolResultsText}\n\nNow present this data to the user in a clear, helpful format. Do NOT tell them to run commands manually.`;
-
-          messages.push({
-            role: 'user',
-            content: userMessage,
-          });
-
-          console.log(`[Assistant] Sending tool results to LLM (${userMessage.length} chars)`);
-          console.log(`[Assistant] Tool result preview: ${toolResultsText.substring(0, 200)}...`);
+        // Consume the async generator and accumulate the full response
+        for await (const chunk of generator) {
+          fullResponse += chunk;
         }
 
-        if (iteration >= maxIterations) {
-          fullResponse = 'I apologize, but I reached the maximum number of tool calls. Please try rephrasing your question.';
+        console.log(`[Assistant] Streaming completed, full response length: ${fullResponse.length}`);
+
+        // Filter out thinking blocks from the response
+        let cleanedResponse = fullResponse;
+
+        // Remove <think>...</think> blocks (case insensitive, multiline)
+        cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?<\/think>/gi, '');
+
+        // Remove <thinking>...</thinking> blocks (case insensitive, multiline)
+        cleanedResponse = cleanedResponse.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+
+        // Remove standalone <think> or </think> tags
+        cleanedResponse = cleanedResponse.replace(/<\/?think>/gi, '');
+        cleanedResponse = cleanedResponse.replace(/<\/?thinking>/gi, '');
+
+        // Trim whitespace and collapse multiple newlines
+        cleanedResponse = cleanedResponse.trim().replace(/\n{3,}/g, '\n\n');
+
+        // If after filtering we have no content, provide a default message
+        if (!cleanedResponse || cleanedResponse.length === 0) {
+          cleanedResponse = 'I understand your request. Let me help you with that.';
         }
+
+        fullResponse = cleanedResponse;
 
         // Add assistant message to conversation
         conversationManager.addMessage(conversationId, 'assistant', fullResponse);
@@ -715,27 +548,38 @@ Example queries and correct actions (CALL means execute via function calling):
           console.log(`[Assistant] Cleared ${pendingEvals.length} pending evaluation(s) after AI response`);
         }
 
-        // Emit completion with token usage
+        // Emit completion
         socket.emit('assistant:complete', {
           conversationId,
           messageId: assistantMessageId,
           fullMessage: fullResponse,
-          usage: totalUsage.totalTokens > 0 ? totalUsage : undefined,
         });
 
-        console.log(`[Assistant] Response completed for conversation ${conversationId} (${fullResponse.length} chars, ${totalUsage.totalTokens} tokens)`);
+        console.log(`[Assistant] Response completed for conversation ${conversationId} (${fullResponse.length} chars)`);
       } catch (streamError: any) {
-        console.error('[Assistant] Streaming error:', streamError);
+        // Handle cancellation separately from other errors
+        if (streamError.name === 'AbortError' || abortController.signal.aborted) {
+          console.log(`[Assistant] Request cancelled for conversation ${conversationId}`);
 
-        socket.emit('assistant:error', {
-          error: streamError instanceof AIServiceError
-            ? streamError.message
-            : 'Failed to generate response. Please try again.',
-          conversationId,
-          code: streamError.code || 'UNKNOWN_ERROR',
-          canRetry: streamError.canRetry !== false,
-        });
+          // Don't emit error for cancellation - the cancel handler already emitted assistant:cancelled
+          // Just add a cancellation message to conversation history
+          conversationManager.addMessage(conversationId, 'assistant', '[Request cancelled by user]');
+        } else {
+          console.error('[Assistant] Streaming error:', streamError);
+
+          socket.emit('assistant:error', {
+            error: streamError instanceof AIServiceError
+              ? streamError.message
+              : 'Failed to generate response. Please try again.',
+            conversationId,
+            code: streamError.code || 'UNKNOWN_ERROR',
+            canRetry: streamError.canRetry !== false,
+          });
+        }
       } finally {
+        // Cleanup: Remove AbortController from active requests
+        activeAssistantRequests.delete(conversationId);
+
         // Stop typing indicator
         socket.emit('assistant:typing', {
           conversationId,
@@ -789,6 +633,41 @@ Example queries and correct actions (CALL means execute via function calling):
         conversationId: data.conversationId,
         code: 'CLEAR_ERROR',
         canRetry: true,
+      });
+    }
+  });
+
+  // Cancel active AI Assistant request
+  socket.on('assistant:cancel', (data: { conversationId: string }) => {
+    try {
+      const { conversationId } = data;
+      const abortController = activeAssistantRequests.get(conversationId);
+
+      if (abortController) {
+        console.log(`[Assistant] Cancelling request for conversation ${conversationId}`);
+        abortController.abort();
+        activeAssistantRequests.delete(conversationId);
+
+        socket.emit('assistant:cancelled', {
+          conversationId,
+          timestamp: new Date().toISOString(),
+        });
+
+        console.log(`[Assistant] Request cancelled for conversation ${conversationId}`);
+      } else {
+        console.log(`[Assistant] No active request to cancel for conversation ${conversationId}`);
+        socket.emit('assistant:cancelled', {
+          conversationId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error: any) {
+      console.error('[Assistant] Error cancelling request:', error);
+      socket.emit('assistant:error', {
+        error: 'Failed to cancel request',
+        conversationId: data.conversationId,
+        code: 'CANCEL_ERROR',
+        canRetry: false,
       });
     }
   });

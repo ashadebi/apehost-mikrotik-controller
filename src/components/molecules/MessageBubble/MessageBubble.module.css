@@ -295,50 +295,64 @@
 }
 
 .commandBlock {
+  position: relative;
   margin: var(--space-md) 0;
+  padding: var(--space-md);
+  background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-tertiary);
-  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.commandHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-primary);
+.commandBlock:hover {
+  border-color: rgba(255, 140, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.commandLabel {
+.commandCode {
+  margin: 0 0 var(--space-md) 0;
+  font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--color-accent-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.commandCode code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-family: inherit;
+  color: inherit;
 }
 
 .commandActions {
   display: flex;
   gap: var(--space-sm);
+  justify-content: flex-end;
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(255, 140, 0, 0.15);
 }
 
 .commandActions :global(.ant-btn) {
-  background: rgba(255, 140, 0, 0.1) !important;
-  border: 1px solid rgba(255, 140, 0, 0.3) !important;
-  color: #ff8c00 !important;
+  height: 36px;
+  padding: 0 var(--space-lg);
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
-  height: 28px;
-  padding: 0 var(--space-md);
+  background: var(--color-bg-secondary) !important;
+  border: 1px solid var(--color-border-primary) !important;
+  color: var(--color-text-primary) !important;
   transition: all var(--transition-fast);
+  font-weight: 500;
 }
 
 .commandActions :global(.ant-btn:hover:not(:disabled)) {
-  background: rgba(255, 140, 0, 0.2) !important;
-  border-color: #ff8c00 !important;
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.4) !important;
+  background: rgba(255, 140, 0, 0.1) !important;
+  border-color: rgba(255, 140, 0, 0.6) !important;
+  color: #ff8c00 !important;
+  box-shadow: 0 0 12px rgba(255, 140, 0, 0.3) !important;
   transform: translateY(-1px);
 }
 
@@ -354,29 +368,13 @@
 }
 
 .commandActions :global(.ant-btn-primary:hover:not(:disabled)) {
-  background: rgba(255, 107, 53, 0.25) !important;
+  background: var(--color-accent-primary) !important;
   border-color: var(--color-accent-primary) !important;
-  box-shadow: 0 0 12px rgba(255, 107, 53, 0.5) !important;
+  color: white !important;
+  box-shadow: 0 0 16px rgba(255, 107, 53, 0.6) !important;
 }
 
 .commandActions :global(.ant-btn) :global(.anticon) {
   color: inherit;
   font-size: 14px;
-}
-
-.commandCode {
-  margin: 0;
-  padding: var(--space-md);
-  background: var(--color-bg-terminal);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-primary);
-  overflow-x: auto;
-}
-
-.commandCode code {
-  background: none;
-  padding: 0;
-  border-radius: 0;
-  font-family: inherit;
 }

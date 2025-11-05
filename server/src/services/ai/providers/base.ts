@@ -25,6 +25,7 @@ export interface StreamMessageOptions extends SendMessageOptions {
   sessionId?: string;
   conversationId?: string;
   tools?: ToolDefinition[];
+  signal?: AbortSignal;
 }
 
 export interface ProviderCapabilities {

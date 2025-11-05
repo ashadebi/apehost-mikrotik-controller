@@ -14,6 +14,8 @@ export interface EnhancedInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop?: () => void;
+  isStreaming?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   disabled?: boolean;
@@ -34,6 +36,8 @@ export const EnhancedInput: React.FC<EnhancedInputProps> = ({
   value,
   onChange,
   onSend,
+  onStop,
+  isStreaming = false,
   onKeyDown,
   placeholder = 'Ask a question...',
   disabled = false,
@@ -195,16 +199,29 @@ export const EnhancedInput: React.FC<EnhancedInputProps> = ({
             </span>
           </div>
           
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={onSend}
-            disabled={!value.trim() || disabled || isAtLimit}
-            className={styles.sendButton}
-            size="large"
-          >
-            Send
-          </Button>
+          {isStreaming ? (
+            <Button
+              danger
+              icon={<ClearOutlined />}
+              onClick={onStop}
+              disabled={disabled}
+              className={styles.sendButton}
+              size="large"
+            >
+              Stop
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={onSend}
+              disabled={!value.trim() || disabled || isAtLimit}
+              className={styles.sendButton}
+              size="large"
+            >
+              Send
+            </Button>
+          )}
         </div>
       </div>
     </div>

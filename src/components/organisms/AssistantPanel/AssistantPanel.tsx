@@ -34,6 +34,8 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [liveTokenCount, setLiveTokenCount] = useState(0);
+  const [processingElapsed, setProcessingElapsed] = useState(0);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
   const [modelInfo, setModelInfo] = useState<AIModelInfo | null>(null);
   const [pricingInfo, setPricingInfo] = useState<{ prompt_per_1m: number; completion_per_1m: number } | null>(null);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -168,6 +170,28 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
 
     fetchTools();
   }, []);
+
+  // Track processing elapsed time and show timeout warning
+  useEffect(() => {
+    if (!isTyping || isStreaming) {
+      setProcessingElapsed(0);
+      setShowTimeoutWarning(false);
+      return;
+    }
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setProcessingElapsed(elapsed);
+
+      // Show timeout warning after 20 seconds
+      if (elapsed >= 20 && !showTimeoutWarning) {
+        setShowTimeoutWarning(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isTyping, isStreaming, showTimeoutWarning]);
 
   // WebSocket event listeners
   useEffect(() => {
@@ -312,12 +336,32 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
       setMetadata(data.metadata);
     };
 
+    // Handle cancellation
+    const handleCancelled = (data: { conversationId: string; timestamp: string }) => {
+      if (data.conversationId !== conversationId) return;
+      console.log('[AssistantPanel] Request cancelled:', data);
+      setIsStreaming(false);
+      setIsTyping(false);
+
+      // Add cancellation message to chat
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `cancelled_${Date.now()}`,
+          role: 'assistant',
+          content: '[Request cancelled]',
+          timestamp: new Date(),
+        },
+      ]);
+    };
+
     socket.on('assistant:stream', handleStream);
     socket.on('assistant:complete', handleComplete);
     socket.on('assistant:error', handleError);
     socket.on('assistant:typing', handleTyping);
     socket.on('assistant:token-update', handleTokenUpdate);
     socket.on('assistant:metadata', handleMetadata);
+    socket.on('assistant:cancelled', handleCancelled);
 
     return () => {
       socket.off('assistant:stream', handleStream);
@@ -326,6 +370,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
       socket.off('assistant:typing', handleTyping);
       socket.off('assistant:token-update', handleTokenUpdate);
       socket.off('assistant:metadata', handleMetadata);
+      socket.off('assistant:cancelled', handleCancelled);
     };
   }, [websocket, conversationId]);
 
@@ -366,6 +411,16 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
 
     // Focus back on input
     inputRef.current?.focus();
+  };
+
+  const handleStop = () => {
+    const socket = websocket.getSocket();
+    if (socket && isStreaming) {
+      console.log('[AssistantPanel] Cancelling request for conversation:', conversationId);
+      socket.emit('assistant:cancel', { conversationId });
+      setIsStreaming(false);
+      setIsTyping(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -555,9 +610,21 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
                 <span className={styles.dot}></span>
               </div>
               <span className={styles.thinkingText}>
-                Processing your request...
-                {liveTokenCount > 0 && (
-                  <span className={styles.tokenCount}> ({liveTokenCount.toLocaleString()} tokens)</span>
+                {showTimeoutWarning ? (
+                  <>
+                    AI is taking longer than expected... ({processingElapsed}s)
+                    <br />
+                    <span className={styles.timeoutSubtext}>
+                      This request may be complex. The AI is still processing.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Processing your request... {processingElapsed > 0 && `(${processingElapsed}s)`}
+                    {liveTokenCount > 0 && (
+                      <span className={styles.tokenCount}> - {liveTokenCount.toLocaleString()} tokens</span>
+                    )}
+                  </>
                 )}
               </span>
             </div>
@@ -575,6 +642,8 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
+          onStop={handleStop}
+          isStreaming={isStreaming}
           onKeyDown={handleKeyDown}
           placeholder="Ask a question about your MikroTik router..."
           disabled={isStreaming}

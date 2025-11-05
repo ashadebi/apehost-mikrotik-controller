@@ -81,17 +81,22 @@ export class ClaudeProvider implements LLMProvider {
       while (currentTurn < maxToolTurns) {
         currentTurn++;
 
-        const stream = await this.client.messages.stream({
-          model: this.model,
-          max_tokens: options?.maxTokens || this.defaultMaxTokens,
-          temperature: options?.temperature,
-          system: systemMessage,
-          messages: conversationMessages.map(m => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-          })),
-          ...(hasTools && { tools: toolDefinitions }),
-        });
+        const stream = await this.client.messages.stream(
+          {
+            model: this.model,
+            max_tokens: options?.maxTokens || this.defaultMaxTokens,
+            temperature: options?.temperature,
+            system: systemMessage,
+            messages: conversationMessages.map(m => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+            })),
+            ...(hasTools && { tools: toolDefinitions }),
+          },
+          {
+            signal: options?.signal,
+          }
+        );
 
         let hasToolUse = false;
         const toolCalls: Array<{ id: string; name: string; input: any }> = [];

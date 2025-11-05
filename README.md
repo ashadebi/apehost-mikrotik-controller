@@ -48,10 +48,6 @@ Complete WireGuard VPN configuration with automatic key generation, peer managem
 
 ![WireGuard VPN](docs/screenshots/wireguard.png)
 
-### Settings & Configuration
-Comprehensive settings management with tabbed interface for Server Configuration and UI Preferences. Configure MikroTik connection, AI provider selection (Claude, Cloudflare Workers AI, LM Studio), system prompts, and application behavior.
-
-![Settings](docs/screenshots/settings.png)
 
 ## Quick Start
 
