@@ -13,6 +13,15 @@ export const ServerConfigSchema = z.object({
   nodeEnv: z.enum(['development', 'production', 'test']),
 });
 
+// Speed Test Configuration Schema
+export const SpeedTestConfigSchema = z.object({
+  fileSizeMB: z.number().int().min(10).max(1000).default(250),
+  testServer: z.enum(['cloudflare', 'google', 'custom']).default('cloudflare'),
+  customUrl: z.string().default(''),
+  timeoutSeconds: z.number().int().min(30).max(300).default(60),
+  pingSamples: z.number().int().min(1).max(10).default(4),
+});
+
 // MikroTik Configuration Schema
 export const MikroTikConfigSchema = z.object({
   host: z.string().min(1),
@@ -21,6 +30,7 @@ export const MikroTikConfigSchema = z.object({
   password: z.string(),
   timeout: z.number().int().min(1000).max(60000),
   keepaliveInterval: z.number().int().min(5000).max(300000),
+  speedTest: SpeedTestConfigSchema,
 });
 
 // LLM Configuration Schema
@@ -108,6 +118,7 @@ export const AppConfigSchema = z.object({
 
 // TypeScript types inferred from schemas
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+export type SpeedTestConfig = z.infer<typeof SpeedTestConfigSchema>;
 export type MikroTikConfig = z.infer<typeof MikroTikConfigSchema>;
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 export type AssistantConfig = z.infer<typeof AssistantConfigSchema>;

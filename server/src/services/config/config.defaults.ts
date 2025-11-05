@@ -22,6 +22,13 @@ export const DEFAULT_CONFIG: AppConfig = {
     password: '',
     timeout: 10000,
     keepaliveInterval: 30000,
+    speedTest: {
+      fileSizeMB: 250,
+      testServer: 'cloudflare',
+      customUrl: '',
+      timeoutSeconds: 60,
+      pingSamples: 4,
+    },
   },
 
   llm: {

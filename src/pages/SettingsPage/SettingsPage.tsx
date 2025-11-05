@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Tabs, Slider, Alert, Spin, message } from 'antd';
-import { ConnectionStatusCard } from '../../components/molecules/ConnectionStatusCard/ConnectionStatusCard';
+import { Slider, Alert, Spin, message } from 'antd';
 import { SettingsSection } from '../../components/organisms/SettingsSection/SettingsSection';
 import { FormField } from '../../components/molecules/FormField/FormField';
 import { ToggleField } from '../../components/molecules/ToggleField/ToggleField';
 import { Input } from '../../components/atoms/Input/Input';
 import { Textarea } from '../../components/atoms/Textarea/Textarea';
 import { Button } from '../../components/atoms/Button/Button';
-import { ServerSettings, UISettings, defaultUISettings } from '../../types/settings';
+import { ServerSettings } from '../../types/settings';
 import styles from './SettingsPage.module.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -29,7 +28,7 @@ interface TestResult {
 export const SettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('server');
+  const [activeSection, setActiveSection] = useState<string>('');
 
   // Notification state
   const [notification, setNotification] = useState<{
@@ -52,43 +51,60 @@ export const SettingsPage: React.FC = () => {
   const [testingMikrotik, setTestingMikrotik] = useState(false);
   const [testingLLM, setTestingLLM] = useState(false);
 
-  // UI Settings State
-  const [uiSettings, setUISettings] = useState<UISettings>(defaultUISettings);
-  const [hasUIChanges, setHasUIChanges] = useState(false);
-
-  // Map section IDs to their tabs
-  const sectionToTabMap: Record<string, string> = {
-    'server': 'server',
-    'router-api': 'server',
-    'ai-assistant': 'server',
-    'terminal': 'ui',
-    'display': 'ui',
-    'security': 'ui',
-    'ai-assistant-ui': 'ui'
-  };
-
-  // Handle deep linking to specific sections
+  // Handle smooth scrolling when hash changes from navigation
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      if (hash && sectionToTabMap[hash]) {
-        const targetTab = sectionToTabMap[hash];
-        setActiveTab(targetTab);
-
-        // Only scroll if the hash is an actual section ID, not just a tab key
+      if (hash) {
         const element = document.getElementById(hash);
         if (element) {
-          setTimeout(() => {
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 100);
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }
     };
 
-    handleHashChange();
+    // Scroll on initial load if hash exists
+    if (window.location.hash) {
+      // Delay to ensure content is rendered
+      setTimeout(handleHashChange, 100);
+    }
+
+    // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [sectionToTabMap]);
+  }, []);
+
+  // Track active section with intersection observer
+  useEffect(() => {
+    const observerOptions = {
+      root: null,
+      rootMargin: '-80px 0px -60% 0px',
+      threshold: 0
+    };
+
+    const observerCallback = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const sectionId = entry.target.id;
+          setActiveSection(sectionId);
+          // Update hash without scrolling
+          if (window.location.hash !== `#${sectionId}`) {
+            history.replaceState(null, '', `#${sectionId}`);
+          }
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(observerCallback, observerOptions);
+
+    // Observe all section containers
+    const sections = document.querySelectorAll('[data-section]');
+    sections.forEach((section) => observer.observe(section));
+
+    return () => {
+      sections.forEach((section) => observer.unobserve(section));
+    };
+  }, []);
 
   // Load settings on mount
   useEffect(() => {
@@ -105,11 +121,6 @@ export const SettingsPage: React.FC = () => {
         setOriginalMaskedPassword(data.mikrotik.password || '');
         setOriginalMaskedApiKey(data.llm.claude.apiKey || '');
         setOriginalMaskedCloudflareToken(data.llm.cloudflare.apiToken || '');
-      }
-
-      const savedUISettings = localStorage.getItem('mikrotik-ui-settings');
-      if (savedUISettings) {
-        setUISettings(JSON.parse(savedUISettings));
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -128,7 +139,6 @@ export const SettingsPage: React.FC = () => {
 
     setTestingMikrotik(true);
     setMikrotikTest(null);
-    setNotification(null);
 
     try {
       const response = await fetch(`${API_URL}/api/setup/test-mikrotik`, {
@@ -146,23 +156,14 @@ export const SettingsPage: React.FC = () => {
       setMikrotikTest(result);
 
       if (result.success) {
-        setNotification({
-          type: 'success',
-          message: `Connected to ${result.routerInfo.name} (${result.routerInfo.model})`
-        });
+        message.success(`Connected to ${result.routerInfo.name} (${result.routerInfo.model})`);
       } else {
-        setNotification({
-          type: 'error',
-          message: result.error || 'Connection test failed'
-        });
+        message.error(result.error || 'Connection test failed');
       }
     } catch (err: any) {
       const errorResult = { success: false, error: err.message };
       setMikrotikTest(errorResult);
-      setNotification({
-        type: 'error',
-        message: 'Failed to test connection: ' + err.message
-      });
+      message.error('Failed to test connection: ' + err.message);
     } finally {
       setTestingMikrotik(false);
     }
@@ -174,7 +175,6 @@ export const SettingsPage: React.FC = () => {
 
     setTestingLLM(true);
     setLLMTest(null);
-    setNotification(null);
 
     try {
       const response = await fetch(`${API_URL}/api/setup/test-llm`, {
@@ -190,26 +190,17 @@ export const SettingsPage: React.FC = () => {
       setLLMTest(result);
 
       if (result.success) {
-        const providerName = serverSettings.llm.provider === 'claude' ? 'Claude API' : 'LMStudio';
+        const providerName = serverSettings.llm.provider === 'claude' ? 'Claude API' : serverSettings.llm.provider === 'cloudflare' ? 'Cloudflare Workers AI' : 'LMStudio';
         const modelName = result.providerInfo?.model ||
-          (serverSettings.llm.provider === 'claude' ? serverSettings.llm.claude.model : serverSettings.llm.lmstudio.model);
-        setNotification({
-          type: 'success',
-          message: `Connected to ${providerName} (${modelName})`
-        });
+          (serverSettings.llm.provider === 'claude' ? serverSettings.llm.claude.model : serverSettings.llm.provider === 'cloudflare' ? serverSettings.llm.cloudflare.model : serverSettings.llm.lmstudio.model);
+        message.success(`Connected to ${providerName} (${modelName})`);
       } else {
-        setNotification({
-          type: 'error',
-          message: result.error || 'Connection test failed'
-        });
+        message.error(result.error || 'Connection test failed');
       }
     } catch (err: any) {
       const errorResult = { success: false, error: err.message };
       setLLMTest(errorResult);
-      setNotification({
-        type: 'error',
-        message: 'Failed to test connection: ' + err.message
-      });
+      message.error('Failed to test connection: ' + err.message);
     } finally {
       setTestingLLM(false);
     }
@@ -277,17 +268,6 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleUISave = () => {
-    try {
-      localStorage.setItem('mikrotik-ui-settings', JSON.stringify(uiSettings));
-      setHasUIChanges(false);
-      message.success('UI settings saved successfully!');
-    } catch (error) {
-      console.error('Failed to save UI settings:', error);
-      message.error('Unable to save UI settings to local storage');
-    }
-  };
-
   const updateServerSettings = <K extends keyof ServerSettings>(
     section: K,
     field: keyof ServerSettings[K],
@@ -308,21 +288,6 @@ export const SettingsPage: React.FC = () => {
     } else if (section === 'llm' || section === 'assistant') {
       setLLMTest(null);
     }
-  };
-
-  const updateUISettings = <K extends keyof UISettings>(
-    section: K,
-    field: keyof UISettings[K],
-    value: any
-  ) => {
-    setUISettings({
-      ...uiSettings,
-      [section]: {
-        ...uiSettings[section],
-        [field]: value
-      }
-    });
-    setHasUIChanges(true);
   };
 
   const updateLLMProviderSettings = (
@@ -382,45 +347,7 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Settings</h1>
-      </div>
-
       <div className={styles.content}>
-        {/* Connection Status Cards */}
-        <div className={styles.statusCards}>
-          <ConnectionStatusCard
-            title="MikroTik Router"
-            status={mikrotikTest?.success ? 'connected' : testingMikrotik ? 'testing' : 'disconnected'}
-            details={mikrotikTest?.success && mikrotikTest.routerInfo ? [
-              { label: 'Host', value: `${serverSettings.mikrotik.host}:${serverSettings.mikrotik.port}` },
-              { label: 'Name', value: mikrotikTest.routerInfo.name },
-              { label: 'Model', value: mikrotikTest.routerInfo.model },
-            ] : [
-              { label: 'Host', value: `${serverSettings.mikrotik.host}:${serverSettings.mikrotik.port}` },
-            ]}
-            error={mikrotikTest?.error}
-            onTest={testMikroTikConnection}
-            testLoading={testingMikrotik}
-          />
-          <ConnectionStatusCard
-            title="AI Assistant"
-            status={llmTest?.success ? 'connected' : testingLLM ? 'testing' : 'disconnected'}
-            details={[
-              {
-                label: 'Provider',
-                value: serverSettings.llm.provider === 'claude' ? 'Claude (Anthropic)' : 'LMStudio (Local)'
-              },
-              ...(llmTest?.success && llmTest.providerInfo ? [
-                { label: 'Model', value: llmTest.providerInfo.model }
-              ] : [])
-            ]}
-            error={llmTest?.error}
-            onTest={testLLMConnection}
-            testLoading={testingLLM}
-          />
-        </div>
-
         {/* Inline Notification */}
         {notification && (
           <Alert
@@ -433,64 +360,56 @@ export const SettingsPage: React.FC = () => {
           />
         )}
 
-        <div className={styles.tabsContainer}>
-          <Tabs
-            activeKey={activeTab}
-            onChange={setActiveTab}
-            type="line"
-            size="large"
-            items={[
-              {
-                key: 'server',
-                label: (
-                  <span>
-                    Server Configuration
-                    {hasServerChanges && <span className={styles.unsavedBadge}>●</span>}
-                  </span>
-                ),
-                children: (
-                  <div className={styles.tabContent}>
-                    {/* Server Settings */}
-                    <div id="server">
-                      <SettingsSection
-                        title="Server Settings"
-                        description="Configure backend server settings"
+        <div className={styles.settingsContent}>
+                      {/* Server Settings */}
+                      <div
+                        id="server"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'server' ? styles.active : ''}`}
                       >
-                        <FormField label="Server Port" helpText="Port number for the backend server (1-65535)">
-                          <Input
-                            type="number"
-                            value={serverSettings.server.port}
-                            onChange={(e) => updateServerSettings('server', 'port', parseInt(e.target.value))}
-                          />
-                        </FormField>
+                        <SettingsSection
+                          title="Application Settings"
+                          description="Configure backend server settings"
+                        >
+                          <FormField label="Server Port" helpText="Port number for the backend server (1-65535)">
+                            <Input
+                              type="number"
+                              value={serverSettings.server.port}
+                              onChange={(e) => updateServerSettings('server', 'port', parseInt(e.target.value))}
+                            />
+                          </FormField>
 
-                        <FormField label="CORS Origin" helpText="Allowed origin for cross-origin requests">
-                          <Input
-                            value={serverSettings.server.corsOrigin}
-                            onChange={(e) => updateServerSettings('server', 'corsOrigin', e.target.value)}
-                            placeholder="http://localhost:5173"
-                          />
-                        </FormField>
+                          <FormField label="CORS Origin" helpText="Allowed origin for cross-origin requests">
+                            <Input
+                              value={serverSettings.server.corsOrigin}
+                              onChange={(e) => updateServerSettings('server', 'corsOrigin', e.target.value)}
+                              placeholder="http://localhost:5173"
+                            />
+                          </FormField>
 
-                        <FormField label="Environment">
-                          <select
-                            className={styles.select}
-                            value={serverSettings.server.nodeEnv}
-                            onChange={(e) => updateServerSettings('server', 'nodeEnv', e.target.value)}
-                          >
-                            <option value="development">Development</option>
-                            <option value="production">Production</option>
-                          </select>
-                        </FormField>
-                      </SettingsSection>
-                    </div>
+                          <FormField label="Environment">
+                            <select
+                              className={styles.select}
+                              value={serverSettings.server.nodeEnv}
+                              onChange={(e) => updateServerSettings('server', 'nodeEnv', e.target.value)}
+                            >
+                              <option value="development">Development</option>
+                              <option value="production">Production</option>
+                            </select>
+                          </FormField>
+                        </SettingsSection>
+                      </div>
 
-                    {/* MikroTik Connection */}
-                    <div id="router-api">
-                      <SettingsSection
-                        title="MikroTik Connection"
-                        description="Configure connection to MikroTik RouterOS via API"
+                      {/* MikroTik Connection */}
+                      <div
+                        id="router-api"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'router-api' ? styles.active : ''}`}
                       >
+                        <SettingsSection
+                          title="MikroTik Connection"
+                          description="Configure connection to MikroTik RouterOS via API"
+                        >
                         <FormField label="Router IP Address / Hostname" helpText="IP address or hostname of your MikroTik router">
                           <Input
                             value={serverSettings.mikrotik.host}
@@ -524,23 +443,180 @@ export const SettingsPage: React.FC = () => {
                           />
                         </FormField>
 
-                        <div className={styles.toggleGroup}>
-                          <Alert
-                            message="Security Notice"
-                            description="Credentials are stored in config.json on the server. Keep this file secure and never commit it to version control."
-                            type="warning"
-                            showIcon
-                          />
-                        </div>
-                      </SettingsSection>
-                    </div>
+                          {/* <div className={styles.toggleGroup}>
+                            <Alert
+                              message="Security Notice"
+                              description="Credentials are stored in config.json on the server. Keep this file secure and never commit it to version control."
+                              type="warning"
+                              showIcon
+                            />
+                          </div> */}
 
-                    {/* LLM Configuration */}
-                    <div id="ai-assistant">
-                      <SettingsSection
-                        title="AI Assistant (LLM) Configuration"
-                        description="Configure AI language model provider and behavior"
+                          <FormField label="Connection Test" helpText="Test the connection to your MikroTik router">
+                            <Button
+                              variant="primary"
+                              onClick={testMikroTikConnection}
+                              disabled={testingMikrotik}
+                            >
+                              {testingMikrotik ? 'Testing MikroTik...' : 'Test MikroTik Connection'}
+                            </Button>
+                          </FormField>
+                        </SettingsSection>
+                      </div>
+
+                      {/* Speed Test Configuration */}
+                      <div
+                        id="speed-test"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'speed-test' ? styles.active : ''}`}
                       >
+                        <SettingsSection
+                          title="Speed Test Configuration"
+                          description="Configure internet speed test settings"
+                        >
+                        <FormField label="File Size" helpText="Larger files provide more accurate results for high-speed connections">
+                          <select
+                            className={styles.select}
+                            value={serverSettings.mikrotik.speedTest.fileSizeMB}
+                            onChange={(e) => {
+                              const newSettings = { ...serverSettings };
+                              newSettings.mikrotik.speedTest.fileSizeMB = parseInt(e.target.value);
+                              setServerSettings(newSettings);
+                              setHasServerChanges(true);
+                            }}
+                          >
+                            <option value="10">10 MB (Fast test, lower accuracy)</option>
+                            <option value="25">25 MB (Quick test)</option>
+                            <option value="50">50 MB (Balanced)</option>
+                            <option value="100">100 MB (Good accuracy)</option>
+                            <option value="250">250 MB (Recommended)</option>
+                            <option value="500">500 MB (High accuracy)</option>
+                            <option value="1000">1 GB (Maximum accuracy, slow)</option>
+                          </select>
+                        </FormField>
+
+                        <FormField label="Test Server">
+                          <div className={styles.providerSection}>
+                            <div
+                              className={`${styles.providerOption} ${serverSettings.mikrotik.speedTest.testServer === 'cloudflare' ? styles.active : ''}`}
+                              onClick={() => {
+                                const newSettings = { ...serverSettings };
+                                newSettings.mikrotik.speedTest.testServer = 'cloudflare';
+                                setServerSettings(newSettings);
+                                setHasServerChanges(true);
+                              }}
+                            >
+                              <div className={styles.providerHeader}>
+                                <div className={styles.providerRadio}>
+                                  {serverSettings.mikrotik.speedTest.testServer === 'cloudflare' && <div className={styles.providerRadioActive}></div>}
+                                </div>
+                                <div className={styles.providerTitle}>Cloudflare (1.1.1.1)</div>
+                              </div>
+                              <div className={styles.providerDescription}>
+                                Fast, reliable CDN - Recommended
+                              </div>
+                            </div>
+
+                            <div
+                              className={`${styles.providerOption} ${serverSettings.mikrotik.speedTest.testServer === 'google' ? styles.active : ''}`}
+                              onClick={() => {
+                                const newSettings = { ...serverSettings };
+                                newSettings.mikrotik.speedTest.testServer = 'google';
+                                setServerSettings(newSettings);
+                                setHasServerChanges(true);
+                              }}
+                            >
+                              <div className={styles.providerHeader}>
+                                <div className={styles.providerRadio}>
+                                  {serverSettings.mikrotik.speedTest.testServer === 'google' && <div className={styles.providerRadioActive}></div>}
+                                </div>
+                                <div className={styles.providerTitle}>Google (8.8.8.8)</div>
+                              </div>
+                              <div className={styles.providerDescription}>
+                                Google Public DNS servers
+                              </div>
+                            </div>
+
+                            <div
+                              className={`${styles.providerOption} ${serverSettings.mikrotik.speedTest.testServer === 'custom' ? styles.active : ''}`}
+                              onClick={() => {
+                                const newSettings = { ...serverSettings };
+                                newSettings.mikrotik.speedTest.testServer = 'custom';
+                                setServerSettings(newSettings);
+                                setHasServerChanges(true);
+                              }}
+                            >
+                              <div className={styles.providerHeader}>
+                                <div className={styles.providerRadio}>
+                                  {serverSettings.mikrotik.speedTest.testServer === 'custom' && <div className={styles.providerRadioActive}></div>}
+                                </div>
+                                <div className={styles.providerTitle}>Custom URL</div>
+                              </div>
+                              <div className={styles.providerDescription}>
+                                Use your own test server endpoint
+                              </div>
+                            </div>
+                          </div>
+                        </FormField>
+
+                        {serverSettings.mikrotik.speedTest.testServer === 'custom' && (
+                          <FormField label="Custom Test URL" helpText="Full URL to download test file (must support HTTPS)">
+                            <Input
+                              type="url"
+                              value={serverSettings.mikrotik.speedTest.customUrl}
+                              onChange={(e) => {
+                                const newSettings = { ...serverSettings };
+                                newSettings.mikrotik.speedTest.customUrl = e.target.value;
+                                setServerSettings(newSettings);
+                                setHasServerChanges(true);
+                              }}
+                              placeholder="https://example.com/testfile"
+                            />
+                          </FormField>
+                        )}
+
+                        <FormField label="Timeout (seconds)" helpText="Maximum time to wait for speed test to complete">
+                          <Input
+                            type="number"
+                            value={serverSettings.mikrotik.speedTest.timeoutSeconds}
+                            onChange={(e) => {
+                              const newSettings = { ...serverSettings };
+                              newSettings.mikrotik.speedTest.timeoutSeconds = parseInt(e.target.value);
+                              setServerSettings(newSettings);
+                              setHasServerChanges(true);
+                            }}
+                            min="30"
+                            max="300"
+                          />
+                        </FormField>
+
+                          <FormField label="Ping Samples" helpText="Number of ping packets to send for latency measurement">
+                            <Input
+                              type="number"
+                              value={serverSettings.mikrotik.speedTest.pingSamples}
+                              onChange={(e) => {
+                                const newSettings = { ...serverSettings };
+                                newSettings.mikrotik.speedTest.pingSamples = parseInt(e.target.value);
+                                setServerSettings(newSettings);
+                                setHasServerChanges(true);
+                              }}
+                              min="1"
+                              max="10"
+                            />
+                          </FormField>
+                        </SettingsSection>
+                      </div>
+
+                      {/* LLM Configuration */}
+                      <div
+                        id="ai-assistant"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'ai-assistant' ? styles.active : ''}`}
+                      >
+                        <SettingsSection
+                          title="AI Assistant"
+                          description="Configure AI language model provider and behavior"
+                        >
                         <FormField label="LLM Provider">
                           <div className={styles.providerSection}>
                             <div
@@ -707,349 +783,68 @@ export const SettingsPage: React.FC = () => {
                           />
                         </FormField>
 
-                        <FormField label="System Prompt" helpText="Instructions for the AI assistant's behavior">
-                          <Textarea
-                            rows={4}
-                            value={serverSettings.assistant.systemPrompt}
-                            onChange={(e) => updateServerSettings('assistant', 'systemPrompt', e.target.value)}
-                            placeholder="You are an expert MikroTik router assistant..."
-                          />
-                        </FormField>
-                      </SettingsSection>
-                    </div>
+                          <FormField label="System Prompt" helpText="Instructions for the AI assistant's behavior">
+                            <Textarea
+                              rows={4}
+                              value={serverSettings.assistant.systemPrompt}
+                              onChange={(e) => updateServerSettings('assistant', 'systemPrompt', e.target.value)}
+                              placeholder="You are an expert MikroTik router assistant..."
+                            />
+                          </FormField>
 
-                    {/* Setup & Maintenance */}
-                    <SettingsSection
-                      title="Setup & Maintenance"
-                      description="Manage application setup and configuration"
-                    >
-                      <FormField
-                        label="Re-run Setup Wizard"
-                        helpText="Start the initial setup wizard to reconfigure MikroTik connection and LLM settings"
+                          <FormField label="Connection Test" helpText="Test the connection to your LLM provider">
+                            <Button
+                              variant="primary"
+                              onClick={testLLMConnection}
+                              disabled={testingLLM}
+                            >
+                              {testingLLM ? 'Testing LLM...' : 'Test LLM Connection'}
+                            </Button>
+                          </FormField>
+                        </SettingsSection>
+                      </div>
+
+                      {/* Setup & Maintenance */}
+                      <div
+                        id="setup"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'setup' ? styles.active : ''}`}
                       >
-                        <Button
-                          variant="secondary"
-                          onClick={handleRestartSetup}
+                        <SettingsSection
+                          title="Setup & Maintenance"
+                          description="Manage application setup and configuration"
                         >
-                          Re-run Setup Wizard
-                        </Button>
-                      </FormField>
-                    </SettingsSection>
-                  </div>
-                )
-              },
-              {
-                key: 'ui',
-                label: (
-                  <span>
-                    UI Preferences
-                    {hasUIChanges && <span className={styles.unsavedBadge}>●</span>}
-                  </span>
-                ),
-                children: (
-                  <div className={styles.tabContent}>
-                    {/* Terminal Configuration */}
-                    <div id="terminal">
-                      <SettingsSection
-                        title="Terminal"
-                        description="Customize terminal appearance and behavior"
-                      >
-                        <FormField label="Font Family">
-                          <select
-                            className={styles.select}
-                            value={uiSettings.terminal.fontFamily}
-                            onChange={(e) => updateUISettings('terminal', 'fontFamily', e.target.value)}
+                          <FormField
+                            label="Re-run Setup Wizard"
+                            helpText="Start the initial setup wizard to reconfigure MikroTik connection and LLM settings"
                           >
-                            <option value="JetBrains Mono">JetBrains Mono</option>
-                            <option value="Fira Code">Fira Code</option>
-                            <option value="Source Code Pro">Source Code Pro</option>
-                            <option value="Consolas">Consolas</option>
-                            <option value="Monaco">Monaco</option>
-                          </select>
-                        </FormField>
-
-                        <div className={styles.sliderContainer}>
-                          <div className={styles.sliderLabel}>
-                            <span className={styles.sliderLabelText}>Font Size</span>
-                            <span className={styles.sliderValue}>{uiSettings.terminal.fontSize}px</span>
-                          </div>
-                          <Slider
-                            min={8}
-                            max={24}
-                            value={uiSettings.terminal.fontSize}
-                            onChange={(value) => updateUISettings('terminal', 'fontSize', value)}
-                            marks={{ 8: '8px', 14: '14px', 24: '24px' }}
-                          />
-                        </div>
-
-                        <div className={styles.sliderContainer}>
-                          <div className={styles.sliderLabel}>
-                            <span className={styles.sliderLabelText}>Line Height</span>
-                            <span className={styles.sliderValue}>{uiSettings.terminal.lineHeight.toFixed(1)}</span>
-                          </div>
-                          <Slider
-                            min={1.0}
-                            max={2.0}
-                            step={0.1}
-                            value={uiSettings.terminal.lineHeight}
-                            onChange={(value) => updateUISettings('terminal', 'lineHeight', value)}
-                            marks={{ 1.0: '1.0', 1.5: '1.5', 2.0: '2.0' }}
-                          />
-                        </div>
-
-                        <FormField label="Color Scheme">
-                          <select
-                            className={styles.select}
-                            value={uiSettings.terminal.colorScheme}
-                            onChange={(e) => updateUISettings('terminal', 'colorScheme', e.target.value as any)}
-                          >
-                            <option value="dark-orange">Dark Orange</option>
-                            <option value="classic-green">Classic Green</option>
-                            <option value="cyan-blue">Cyan Blue</option>
-                          </select>
-                        </FormField>
-
-                        <div className={styles.toggleGroup}>
-                          <ToggleField
-                            label="Enable Syntax Highlighting"
-                            checked={uiSettings.terminal.syntaxHighlighting}
-                            onChange={(checked) => updateUISettings('terminal', 'syntaxHighlighting', checked)}
-                          />
-                          <ToggleField
-                            label="Show Line Numbers"
-                            checked={uiSettings.terminal.lineNumbers}
-                            onChange={(checked) => updateUISettings('terminal', 'lineNumbers', checked)}
-                          />
-                        </div>
-
-                        <FormField label="History Limit (lines)" helpText="Number of command history entries to keep">
-                          <Input
-                            type="number"
-                            value={uiSettings.terminal.historyLimit}
-                            onChange={(e) => updateUISettings('terminal', 'historyLimit', parseInt(e.target.value))}
-                          />
-                        </FormField>
-                      </SettingsSection>
-                    </div>
-
-                    {/* Display Settings */}
-                    <div id="display">
-                      <SettingsSection
-                        title="Display Settings"
-                        description="Customize date, time, and timezone preferences"
-                      >
-                        <FormField label="Timezone">
-                          <select
-                            className={styles.select}
-                            value={uiSettings.display.timezone}
-                            onChange={(e) => updateUISettings('display', 'timezone', e.target.value)}
-                          >
-                            <optgroup label="Common Timezones">
-                              <option value="America/New_York">Eastern Time (ET)</option>
-                              <option value="America/Chicago">Central Time (CT)</option>
-                              <option value="America/Denver">Mountain Time (MT)</option>
-                              <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                            </optgroup>
-                            <optgroup label="Europe">
-                              <option value="Europe/London">London (GMT/BST)</option>
-                              <option value="Europe/Paris">Paris (CET/CEST)</option>
-                            </optgroup>
-                            <optgroup label="Asia">
-                              <option value="Asia/Tokyo">Tokyo (JST)</option>
-                              <option value="Asia/Shanghai">China (CST)</option>
-                            </optgroup>
-                            <option value="UTC">UTC</option>
-                          </select>
-                        </FormField>
-
-                        <FormField label="Time Format">
-                          <select
-                            className={styles.select}
-                            value={uiSettings.display.timeFormat}
-                            onChange={(e) => updateUISettings('display', 'timeFormat', e.target.value as '12h' | '24h')}
-                          >
-                            <option value="12h">12-hour (AM/PM)</option>
-                            <option value="24h">24-hour</option>
-                          </select>
-                        </FormField>
-
-                        <FormField label="Date Format">
-                          <select
-                            className={styles.select}
-                            value={uiSettings.display.dateFormat}
-                            onChange={(e) => updateUISettings('display', 'dateFormat', e.target.value)}
-                          >
-                            <option value="MMM DD, YYYY">Jan 01, 2024</option>
-                            <option value="DD/MM/YYYY">01/01/2024</option>
-                            <option value="YYYY-MM-DD">2024-01-01</option>
-                          </select>
-                        </FormField>
-                      </SettingsSection>
-                    </div>
-
-                    {/* AI Assistant Behavior */}
-                    <SettingsSection
-                      title="AI Assistant Behavior"
-                      description="Configure AI assistant interaction preferences"
-                    >
-                      <ToggleField
-                        label="Enable Command Suggestions"
-                        description="Show AI-powered command suggestions"
-                        checked={uiSettings.behavior.enableSuggestions}
-                        onChange={(checked) => updateUISettings('behavior', 'enableSuggestions', checked)}
-                      />
-                      <ToggleField
-                        label="Show Command Explanations"
-                        description="Display explanations for suggested commands"
-                        checked={uiSettings.behavior.showExplanations}
-                        onChange={(checked) => updateUISettings('behavior', 'showExplanations', checked)}
-                      />
-                      <ToggleField
-                        label="Auto-execute Safe Commands"
-                        description="⚠️ Automatically run read-only commands"
-                        checked={uiSettings.behavior.autoExecuteSafe}
-                        onChange={(checked) => updateUISettings('behavior', 'autoExecuteSafe', checked)}
-                      />
-                      <ToggleField
-                        label="Require Confirmation"
-                        description="Ask before executing critical commands"
-                        checked={uiSettings.behavior.requireConfirmation}
-                        onChange={(checked) => updateUISettings('behavior', 'requireConfirmation', checked)}
-                      />
-                    </SettingsSection>
-
-                    {/* Security */}
-                    <div id="security">
-                      <SettingsSection
-                        title="Security & Privacy"
-                        description="Manage security and privacy preferences"
-                      >
-                        <ToggleField
-                          label="Store Credentials Locally"
-                          checked={uiSettings.security.storeCredentials}
-                          onChange={(checked) => updateUISettings('security', 'storeCredentials', checked)}
-                        />
-                        <ToggleField
-                          label="Encrypt Stored Credentials"
-                          checked={uiSettings.security.encryptCredentials}
-                          onChange={(checked) => updateUISettings('security', 'encryptCredentials', checked)}
-                        />
-                        <ToggleField
-                          label="Enable Audit Logging"
-                          checked={uiSettings.security.enableAuditLogging}
-                          onChange={(checked) => updateUISettings('security', 'enableAuditLogging', checked)}
-                        />
-                        <ToggleField
-                          label="Log AI Conversations"
-                          checked={uiSettings.security.logAiConversations}
-                          onChange={(checked) => updateUISettings('security', 'logAiConversations', checked)}
-                        />
-                        <ToggleField
-                          label="Log Router Commands"
-                          checked={uiSettings.security.logRouterCommands}
-                          onChange={(checked) => updateUISettings('security', 'logRouterCommands', checked)}
-                        />
-
-                        <FormField label="Session Timeout (minutes)" helpText="Auto-logout after inactivity">
-                          <Input
-                            type="number"
-                            value={uiSettings.security.sessionTimeout}
-                            onChange={(e) => updateUISettings('security', 'sessionTimeout', parseInt(e.target.value))}
-                          />
-                        </FormField>
-                      </SettingsSection>
-                    </div>
-
-                    {/* AI Assistant Configuration */}
-                    <div id="ai-assistant-ui">
-                      <SettingsSection
-                        title="AI Assistant"
-                        description="Configure AI assistant interface options"
-                      >
-                        <div className={styles.subsectionTitle}>Side Panel Sections</div>
-                        <div className={styles.toggleGroup}>
-                          <ToggleField
-                            label="AI Model Info"
-                            description="Display AI model details, provider, and token costs"
-                            checked={uiSettings.aiAssistant.sidePanelSections.modelInfo}
-                            onChange={(checked) => updateUISettings('aiAssistant', 'sidePanelSections', {
-                              ...uiSettings.aiAssistant.sidePanelSections,
-                              modelInfo: checked
-                            })}
-                          />
-                          <ToggleField
-                            label="Session Info"
-                            description="Show session duration, tool calls, and command count"
-                            checked={uiSettings.aiAssistant.sidePanelSections.sessionInfo}
-                            onChange={(checked) => updateUISettings('aiAssistant', 'sidePanelSections', {
-                              ...uiSettings.aiAssistant.sidePanelSections,
-                              sessionInfo: checked
-                            })}
-                          />
-                          <ToggleField
-                            label="Most Used Tools"
-                            description="Display frequently used AI tools in the session"
-                            checked={uiSettings.aiAssistant.sidePanelSections.mostUsedTools}
-                            onChange={(checked) => updateUISettings('aiAssistant', 'sidePanelSections', {
-                              ...uiSettings.aiAssistant.sidePanelSections,
-                              mostUsedTools: checked
-                            })}
-                          />
-                          <ToggleField
-                            label="Available Tools"
-                            description="Show all available AI tools and their categories"
-                            checked={uiSettings.aiAssistant.sidePanelSections.availableTools}
-                            onChange={(checked) => updateUISettings('aiAssistant', 'sidePanelSections', {
-                              ...uiSettings.aiAssistant.sidePanelSections,
-                              availableTools: checked
-                            })}
-                          />
-                        </div>
-                      </SettingsSection>
-                    </div>
-                  </div>
-                )
-              }
-            ]}
-          />
+                            <Button
+                              variant="secondary"
+                              onClick={handleRestartSetup}
+                            >
+                              Re-run Setup Wizard
+                            </Button>
+                          </FormField>
+                        </SettingsSection>
+                      </div>
         </div>
       </div>
 
       {/* Footer Actions */}
       <div className={styles.footer}>
-        {activeTab === 'server' ? (
-          <>
-            <Button
-              onClick={() => loadSettings()}
-              disabled={!hasServerChanges || saving}
-            >
-              Discard Changes
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleServerSave}
-              disabled={!hasServerChanges || saving}
-            >
-              {saving ? 'Saving...' : 'Save Server Settings'}
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              onClick={() => loadSettings()}
-              disabled={!hasUIChanges}
-            >
-              Discard Changes
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleUISave}
-              disabled={!hasUIChanges}
-            >
-              Save UI Settings
-            </Button>
-          </>
-        )}
+        <Button
+          onClick={() => loadSettings()}
+          disabled={!hasServerChanges || saving}
+        >
+          Discard Changes
+        </Button>
+        <Button
+          variant="primary"
+          onClick={handleServerSave}
+          disabled={!hasServerChanges || saving}
+        >
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
       </div>
     </div>
   );

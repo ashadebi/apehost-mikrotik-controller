@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Menu } from 'antd';
 import {
   DashboardOutlined,
@@ -28,6 +28,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate
 }) => {
   const [openKeys, setOpenKeys] = useState<string[]>(activeNav === 'settings' ? ['settings'] : []);
+  const [currentHash, setCurrentHash] = useState(window.location.hash.replace('#', ''));
+
+  // Listen for hash changes
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash.replace('#', ''));
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Keep settings submenu open when on settings page
+  useEffect(() => {
+    if (activeNav === 'settings' && !openKeys.includes('settings')) {
+      setOpenKeys(['settings']);
+    }
+  }, [activeNav, openKeys]);
+
+  // Get current hash to highlight active settings section
+  const activeSettingsKey = currentHash ? `settings-${currentHash}` : '';
+
+  // Determine selected keys
+  const selectedKeys = activeNav === 'settings' && activeSettingsKey
+    ? [activeNav, activeSettingsKey]
+    : [activeNav];
 
   const handleMenuClick = (key: string) => {
     // If it's a settings sub-item, set hash and navigate to settings
@@ -90,11 +116,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <SettingOutlined />,
       label: 'Settings',
       children: [
-        { key: 'settings-router-api', label: 'RouterOS API' },
+        { key: 'settings-server', label: 'Server Settings' },
+        { key: 'settings-router-api', label: 'MikroTik' },
+        { key: 'settings-speed-test', label: 'Speed Test' },
         { key: 'settings-ai-assistant', label: 'AI Assistant' },
-        { key: 'settings-display', label: 'Display' },
-        { key: 'settings-terminal', label: 'Terminal' },
-        { key: 'settings-security', label: 'Security' },
+        { key: 'settings-setup', label: 'Setup' },
       ],
     },
   ];
@@ -120,7 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <nav className={styles.navigation}>
         <Menu
           mode="inline"
-          selectedKeys={[activeNav]}
+          selectedKeys={selectedKeys}
           openKeys={openKeys}
           onOpenChange={handleSubMenuChange}
           onClick={({ key }) => handleMenuClick(key)}

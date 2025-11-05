@@ -21,6 +21,13 @@ export interface AppConfig {
     password: string;
     timeout: number;
     keepaliveInterval: number;
+    speedTest: {
+      fileSizeMB: number;
+      testServer: 'cloudflare' | 'google' | 'custom';
+      customUrl: string;
+      timeoutSeconds: number;
+      pingSamples: number;
+    };
   };
   llm: {
     provider: 'claude' | 'lmstudio' | 'cloudflare';
@@ -83,6 +90,13 @@ class ConfigManager {
           password: settings.mikrotik.password,
           timeout: settings.mikrotik.timeout,
           keepaliveInterval: settings.mikrotik.keepaliveInterval,
+          speedTest: {
+            fileSizeMB: settings.mikrotik.speedTest.fileSizeMB,
+            testServer: settings.mikrotik.speedTest.testServer,
+            customUrl: settings.mikrotik.speedTest.customUrl,
+            timeoutSeconds: settings.mikrotik.speedTest.timeoutSeconds,
+            pingSamples: settings.mikrotik.speedTest.pingSamples,
+          },
         },
         llm: {
           provider: settings.llm.provider,

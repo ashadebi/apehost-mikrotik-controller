@@ -1,20 +1,7 @@
 .container {
   min-height: 100vh;
   background-color: var(--color-bg-primary);
-}
-
-.header {
-  padding: 0 var(--space-xl);
-  height: 49px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--color-border-primary);
-}
-
-.title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  scroll-behavior: smooth;
 }
 
 .content {
@@ -23,21 +10,43 @@
   max-width: 1200px;
 }
 
-.statusCards {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-lg);
-  margin-bottom: var(--space-xl);
-}
-
-.tabsContainer {
-  margin-bottom: var(--space-xl);
-}
-
-.tabContent {
+.settingsContent {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
+  gap: var(--space-2xl);
+  margin-bottom: var(--space-xl);
+}
+
+.sectionContainer {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  scroll-margin-top: calc(var(--space-xl) + 20px);
+  transition: border-color var(--transition-fast);
+}
+
+.sectionContainer:hover {
+  border-color: var(--color-border-secondary);
+}
+
+.sectionContainer:target {
+  border-color: var(--color-accent-primary);
+  animation: highlight 1s ease-out;
+}
+
+.sectionContainer.active {
+  border-color: var(--color-accent-primary);
+  animation: highlight 1s ease-out;
+}
+
+@keyframes highlight {
+  0% {
+    box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 53, 0);
+  }
 }
 
 .footer {
@@ -208,28 +217,10 @@
   min-height: 400px;
 }
 
-.unsavedBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: 2px var(--space-sm);
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  color: #f59e0b;
-  margin-left: var(--space-sm);
-}
-
 @media (max-width: 1024px) {
   .footer {
     left: 0;
     bottom: 48px; /* Keep above terminal taskbar on mobile */
-  }
-
-  .statusCards {
-    grid-template-columns: 1fr;
   }
 
   .gridTwo {

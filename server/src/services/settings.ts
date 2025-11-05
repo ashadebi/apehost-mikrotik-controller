@@ -17,6 +17,13 @@ export interface ServerSettings {
     password: string;
     timeout: number;
     keepaliveInterval: number;
+    speedTest: {
+      fileSizeMB: number;
+      testServer: 'cloudflare' | 'google' | 'custom';
+      customUrl: string;
+      timeoutSeconds: number;
+      pingSamples: number;
+    };
   };
 
   // LLM Configuration
@@ -71,6 +78,13 @@ class SettingsService {
         password: config.mikrotik.password,
         timeout: config.mikrotik.timeout,
         keepaliveInterval: config.mikrotik.keepaliveInterval,
+        speedTest: {
+          fileSizeMB: config.mikrotik.speedTest.fileSizeMB,
+          testServer: config.mikrotik.speedTest.testServer,
+          customUrl: config.mikrotik.speedTest.customUrl,
+          timeoutSeconds: config.mikrotik.speedTest.timeoutSeconds,
+          pingSamples: config.mikrotik.speedTest.pingSamples,
+        },
       },
       llm: {
         provider: config.llm.provider,
@@ -122,6 +136,13 @@ class SettingsService {
           password: settings.mikrotik.password ?? config.mikrotik.password,
           timeout: settings.mikrotik.timeout ?? config.mikrotik.timeout,
           keepaliveInterval: settings.mikrotik.keepaliveInterval ?? config.mikrotik.keepaliveInterval,
+          speedTest: settings.mikrotik.speedTest ? {
+            fileSizeMB: settings.mikrotik.speedTest.fileSizeMB ?? config.mikrotik.speedTest.fileSizeMB,
+            testServer: settings.mikrotik.speedTest.testServer ?? config.mikrotik.speedTest.testServer,
+            customUrl: settings.mikrotik.speedTest.customUrl ?? config.mikrotik.speedTest.customUrl,
+            timeoutSeconds: settings.mikrotik.speedTest.timeoutSeconds ?? config.mikrotik.speedTest.timeoutSeconds,
+            pingSamples: settings.mikrotik.speedTest.pingSamples ?? config.mikrotik.speedTest.pingSamples,
+          } : config.mikrotik.speedTest,
         } : config.mikrotik,
         llm: settings.llm ? {
           ...config.llm,

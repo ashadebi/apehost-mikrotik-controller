@@ -1821,15 +1821,34 @@ class MikroTikService {
     }
 
     try {
-      const testServer = '1.1.1.1'; // Cloudflare DNS
-      const testUrl = 'https://speed.cloudflare.com/__down?bytes=104857600'; // 100MB download test for better accuracy
+      // Load speed test configuration
+      const config = await configManager.getMikroTikConfig();
+      const speedTestConfig = config.speedTest;
+
+      // Determine test server based on configuration
+      let testServer: string;
+      let testUrl: string;
+
+      if (speedTestConfig.testServer === 'cloudflare') {
+        testServer = '1.1.1.1'; // Cloudflare DNS
+        const fileSizeBytes = speedTestConfig.fileSizeMB * 1048576; // Convert MB to bytes
+        testUrl = `https://speed.cloudflare.com/__down?bytes=${fileSizeBytes}`;
+      } else if (speedTestConfig.testServer === 'google') {
+        testServer = '8.8.8.8'; // Google DNS
+        const fileSizeBytes = speedTestConfig.fileSizeMB * 1048576;
+        testUrl = `https://www.google.com/images/phd/px.gif?size=${fileSizeBytes}`;
+      } else {
+        // Custom URL
+        testServer = 'custom';
+        testUrl = speedTestConfig.customUrl || 'https://speed.cloudflare.com/__down?bytes=262144000';
+      }
 
       // Test latency with ping
       let latency = 0;
       try {
         const pingResult = await this.executeCommand('/ping', {
           address: testServer,
-          count: 4
+          count: speedTestConfig.pingSamples
         });
 
         console.log('Speed test ping results:', JSON.stringify(pingResult, null, 2));
@@ -1861,15 +1880,22 @@ class MikroTikService {
       try {
         const startTime = Date.now();
 
-        // Use tool/fetch to download test file
-        await this.executeCommand('/tool/fetch', {
+        // Use tool/fetch to download test file with timeout wrapper
+        const fetchPromise = this.executeCommand('/tool/fetch', {
           url: testUrl,
           mode: 'https',
           'keep-result': 'no'
         });
 
+        // Implement timeout wrapper since /tool/fetch doesn't support timeout parameter
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Speed test timeout')), speedTestConfig.timeoutSeconds * 1000);
+        });
+
+        await Promise.race([fetchPromise, timeoutPromise]);
+
         const duration = (Date.now() - startTime) / 1000; // seconds
-        const fileSizeMB = 100; // 100MB
+        const fileSizeMB = speedTestConfig.fileSizeMB;
         downloadSpeed = Math.round((fileSizeMB * 8 / duration) * 100) / 100; // Mbps
         console.log(`Speed test: Download completed in ${duration.toFixed(2)}s, speed: ${downloadSpeed} Mbps`);
       } catch (error) {

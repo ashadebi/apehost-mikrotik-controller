@@ -133,6 +133,11 @@
   color: var(--color-text-primary) !important;
 }
 
+.navigation :global(.ant-menu-item-selected:hover) {
+  background-color: var(--color-accent-primary) !important;
+  color: var(--color-text-primary) !important;
+}
+
 .navigation :global(.ant-menu-item-selected::after) {
   display: none !important;
 }

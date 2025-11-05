@@ -247,14 +247,14 @@ export const SettingsPage: React.FC = () => {
                   <Input.Password placeholder="Enter password" />
                 </Form.Item>
 
-                <Alert
+                {/* <Alert
                   message="Security Notice"
                   description="Credentials are stored in .env file on the server. Keep this file secure and never commit it to version control."
                   type="warning"
                   showIcon
                   icon={<LockOutlined />}
                   style={{ marginTop: 16 }}
-                />
+                /> */}
               </Card>
 
               {/* LLM Configuration */}
@@ -262,7 +262,7 @@ export const SettingsPage: React.FC = () => {
                 title={
                   <span>
                     <RobotOutlined style={{ marginRight: 8 }} />
-                    AI Assistant (LLM) Configuration
+                    AI Assistant
                   </span>
                 }
                 style={{ marginBottom: 24 }}

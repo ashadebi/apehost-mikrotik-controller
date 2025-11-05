@@ -17,6 +17,13 @@ export interface ServerSettings {
     port: number;
     username: string;
     password: string;
+    speedTest: {
+      fileSizeMB: number;
+      testServer: 'cloudflare' | 'google' | 'custom';
+      customUrl: string;
+      timeoutSeconds: number;
+      pingSamples: number;
+    };
   };
   llm: {
     provider: AIProvider;

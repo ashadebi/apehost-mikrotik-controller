@@ -366,6 +366,13 @@ class SetupService {
           password: setupConfig.mikrotik.password,
           timeout: setupConfig.mikrotik.timeout || 10000,
           keepaliveInterval: setupConfig.mikrotik.keepaliveInterval || 30000,
+          speedTest: {
+            fileSizeMB: 250,
+            testServer: 'cloudflare',
+            customUrl: '',
+            timeoutSeconds: 60,
+            pingSamples: 4,
+          },
         },
       };
 
