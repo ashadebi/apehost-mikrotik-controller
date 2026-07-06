@@ -163,13 +163,19 @@ class MikroTikService {
     try {
       const config = await this.loadConfig();
       console.log(`[MikroTik] Connecting to ${config.host}:${config.port}...`);
-      
+
+      // RouterOSAPI.setOptions() treats `timeout` as SECONDS (passed to
+      // socket.setTimeout(this.timeout * 1000)). Our config stores it as
+      // milliseconds, so convert here and clamp to a sane minimum so a
+      // pathological config doesn't produce a 10-million-second timeout.
+      const timeoutSeconds = Math.max(5, Math.round((config.timeout || 10000) / 1000));
+
       this.connection = new RouterOSAPI({
         host: config.host,
         user: config.user,
         password: config.password,
         port: config.port,
-        timeout: config.timeout,
+        timeout: timeoutSeconds,
       });
 
       // Set up event listeners
@@ -183,12 +189,32 @@ class MikroTikService {
         this.lastError = err.message;
       });
 
-      await this.connection.connect();
+      // Safety net: node-routeros 1.6.x can hang the connect promise under
+      // some edge cases (e.g. socket closes mid-login, watch-event ordering).
+      // Race against an explicit timeout so the request layer never blocks.
+      const CONNECT_TIMEOUT_MS = 15000;
+      let timeoutHandle: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`MikroTik connect timeout (${CONNECT_TIMEOUT_MS}ms)`)),
+          CONNECT_TIMEOUT_MS,
+        );
+      });
+
+      try {
+        await Promise.race([
+          this.connection.connect(),
+          timeoutPromise,
+        ]);
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+      }
+
       this.isConnected = true;
       this.connectedSince = new Date();
       this.reconnectAttempts = 0;
       this.lastError = null;
-      
+
       // Fetch router identity
       try {
         this.routerIdentity = await this.getIdentity();
@@ -197,10 +223,10 @@ class MikroTikService {
       }
 
       console.log(`[MikroTik] Successfully connected to ${config.host}`);
-      
+
       // Start keepalive
       this.startKeepalive();
-      
+
       return true;
     } catch (error: any) {
       console.error('[MikroTik] Failed to connect:', error.message);
@@ -458,8 +484,17 @@ class MikroTikService {
   public async healthCheck(): Promise<HealthStatus> {
     const config = await this.loadConfig();
 
-    // Try to refresh identity if connected (with caching)
-    if (this.isConnected) {
+    // If we're not connected, kick off a connection attempt in the
+    // background so /api/health eventually reports a real status instead
+    // of staying stuck on `connected: false`. We deliberately don't await
+    // it here — healthCheck() must stay fast for the 2-second deadline in
+    // routes/health.ts.
+    if (!this.isConnected) {
+      this.connect().catch(() => {
+        // Errors are already captured into this.lastError by _doConnect.
+      });
+    } else {
+      // Try to refresh identity if connected (with caching)
       try {
         this.routerIdentity = await this.getCached(
           'router-identity',
