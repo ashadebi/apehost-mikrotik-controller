@@ -44,8 +44,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const basicAuthUser = process.env.APECONTROL_ADMIN_USER || process.env.ADMIN_USER;
-const basicAuthPassword = process.env.APECONTROL_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD;
+const basicAuthUser = process.env.BEDES_ADMIN_USER || process.env.APECONTROL_ADMIN_USER || process.env.ADMIN_USER;
+const basicAuthPassword = process.env.BEDES_ADMIN_PASSWORD || process.env.APECONTROL_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD;
 
 if (basicAuthUser && basicAuthPassword) {
   app.use((req: Request, res: Response, next) => {
@@ -62,7 +62,7 @@ if (basicAuthUser && basicAuthPassword) {
       }
     }
 
-    res.setHeader('WWW-Authenticate', 'Basic realm="ApeControl"');
+    res.setHeader('WWW-Authenticate', 'Basic realm="BEDES MikroTik Controller"');
     return res.status(401).send('Authentication required');
   });
 }
@@ -94,7 +94,7 @@ app.use(express.static(frontendDistDir));
 // Root endpoint
 app.get('/api', (req: Request, res: Response) => {
   res.json({
-    name: 'ApeControl API',
+    name: 'BEDES MikroTik Controller API',
     version: '1.0.0',
     status: 'running',
     endpoints: {
@@ -794,7 +794,7 @@ const startServer = async () => {
   console.log('[Server] Backup Management Service started');
 
   server = httpServer.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`\n[Server] MikroTik Dashboard API Server`);
+    console.log(`\n[Server] BEDES MikroTik Controller API Server`);
     console.log(`[Server] Port: ${PORT}`);
     console.log(`[Server] Host: 0.0.0.0 (accessible from network)`);
     console.log(`[Server] Environment: ${config.server.nodeEnv}`);

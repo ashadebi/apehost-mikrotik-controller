@@ -219,7 +219,7 @@ export const SetupWizardPage: React.FC = () => {
         <img src={bardLogo} alt="MikroTik Dashboard Logo" className={styles.logo} />
       </div>
 
-      <h2 className={styles.stepTitle}>Welcome to apehost.net Mikrotik bard</h2>
+      <h2 className={styles.stepTitle}>Welcome to BEDES MikroTik Controller</h2>
       <p className={styles.stepDescription}>
         Let's get your dashboard set up and connected to your MikroTik router.
       </p>

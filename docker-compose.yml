@@ -1,10 +1,10 @@
 version: "3.9"
 
 services:
-  apecontrol:
+  bedes-mikrotik-controller:
     build: .
-    image: apecontrol:latest
-    container_name: apecontrol
+    image: bedes-mikrotik-controller:latest
+    container_name: bedes-mikrotik-controller
     restart: unless-stopped
     env_file: .env
     environment:
@@ -17,16 +17,16 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=hosting-public
-      - traefik.http.routers.apecontrol-web.rule=Host(`${APECONTROL_DOMAIN}`)
-      - traefik.http.routers.apecontrol-web.entrypoints=web
-      - traefik.http.routers.apecontrol-web.middlewares=apecontrol-https-redirect
-      - traefik.http.middlewares.apecontrol-https-redirect.redirectscheme.scheme=https
-      - traefik.http.middlewares.apecontrol-https-redirect.redirectscheme.permanent=true
-      - traefik.http.routers.apecontrol.rule=Host(`${APECONTROL_DOMAIN}`)
-      - traefik.http.routers.apecontrol.entrypoints=websecure
-      - traefik.http.routers.apecontrol.tls=true
-      - traefik.http.routers.apecontrol.tls.certresolver=letsencrypt
-      - traefik.http.services.apecontrol.loadbalancer.server.port=3000
+      - traefik.http.routers.bedes-mikrotik-controller-web.rule=Host(`${BEDES_DOMAIN}`)
+      - traefik.http.routers.bedes-mikrotik-controller-web.entrypoints=web
+      - traefik.http.routers.bedes-mikrotik-controller-web.middlewares=bedes-mikrotik-controller-https-redirect
+      - traefik.http.middlewares.bedes-mikrotik-controller-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.bedes-mikrotik-controller-https-redirect.redirectscheme.permanent=true
+      - traefik.http.routers.bedes-mikrotik-controller.rule=Host(`${BEDES_DOMAIN}`)
+      - traefik.http.routers.bedes-mikrotik-controller.entrypoints=websecure
+      - traefik.http.routers.bedes-mikrotik-controller.tls=true
+      - traefik.http.routers.bedes-mikrotik-controller.tls.certresolver=letsencrypt
+      - traefik.http.services.bedes-mikrotik-controller.loadbalancer.server.port=3000
     networks:
       - hosting-public
 

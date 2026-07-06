@@ -130,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={styles.logo}>
         <img
           src={apehostLogo}
-          alt="ApeHost MikroTik Controller Dashboard"
+          alt="BEDES MikroTik Controller Dashboard"
           className={styles.logoImage}
         />
       </div>

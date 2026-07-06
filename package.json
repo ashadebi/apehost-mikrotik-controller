@@ -1,7 +1,7 @@
 {
-  "name": "apecontrol",
+  "name": "bedes-mikrotik-controller",
   "version": "1.0.0",
-  "description": "ApeControl multi-router MikroTik management dashboard",
+  "description": "BEDES MikroTik Controller — multi-router MikroTik management dashboard with AI assistant",
   "private": true,
   "type": "module",
   "scripts": {

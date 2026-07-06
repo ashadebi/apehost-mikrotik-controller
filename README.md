@@ -1,211 +1,392 @@
+# BEDES MikroTik Controller
+
+> Multi-router MikroTik RouterOS management dashboard with built-in AI assistant
+> for network diagnostics and troubleshooting.
 >
+> Forked from
+> [JungleM0nkey/apehost-mikrotik-controller](https://github.com/JungleM0nkey/apehost-mikrotik-controller),
+> re-branded to **BEDES MikroTik Controller** and extended with full
+> multi-router support.
 
-<div align="center">
-  <img src="docs/logo.png" alt="MikroTik Controller Logo" width="1100"/>
-</div>
+---
 
+## ✨ Fitur
 
+### 🛰️ Multi-router management
+- Kelola banyak MikroTik dari satu dashboard.
+- Tambah, edit, aktifkan, dan hapus profil router lewat UI atau REST API.
+- Pilih router aktif dengan satu klik — connection, agent, terminal, dan AI
+  otomatis switch ke router yang dipilih.
+- Fallback ke konfigurasi single-router lama (`config.json` → `mikrotik{}`)
+  supaya upgrade dari versi single-router mulus tanpa migrasi manual.
+- Password disimpan terenkripsi di `config.json`; API response selalu
+  masking dengan `********` dan form edit hanya overwrite jika user
+  mengetik password baru (placeholder `********` artinya "jangan ubah").
 
-> [!WARNING]
-> **Work In Progress - Not Production Ready**
->
-> This project is under active development and is **NOT ready for production use**. Features are incomplete, bugs are expected, and breaking changes may occur without notice. Use at your own risk.
->
-> - Security features are not fully implemented
-> - API stability is not guaranteed
-> - Data loss may occur during updates
-> - Not all features are fully functional
+### 🤖 AI assistant (opsional, 3 provider)
+- 14 specialised MCP tools untuk network troubleshooting:
+  firewall path analysis, ping/traceroute, ARP/DNS/DHCP diagnostics,
+  security audit, WireGuard management, speed test, system metrics, dll.
+- Plug-in LLM provider pilihan:
+  - **Claude (Anthropic)** — kualitas premium, bayar.
+  - **Cloudflare Workers AI** — murah, function-calling support.
+  - **LM Studio / OpenAI-compatible endpoint** — gratis, self-hosted.
+- 5-phase diagnostic workflow otomatis (Understand → Test → Analyze → Check
+  → Trace) dengan confidence scoring & severity classification.
 
-Web-based management interface for MikroTik routers with AI-powered network diagnostics and troubleshooting capabilities.
+### 📊 Dashboard & monitoring
+- Real-time router metrics, system resources, interface status, traffic
+  statistics.
+- Live WebSocket updates untuk interface data dengan visual traffic
+  indicators.
+- Network map interaktif (ReactFlow + Dagre) dengan traffic flow
+  visualisation.
+- Speed-test integration (Cloudflare / Google / custom URL).
 
-## Interface Overview
+### 🔌 WireGuard management
+- Auto-generate key pair, peer management, QR code untuk mobile,
+- Interface setup wizard.
+- Persistent DB via better-sqlite3.
 
-The dashboard provides multiple specialized views for comprehensive network management:
+### 💾 Backup & restore
+- Backup binary + export format (.rsc / .backup).
+- Auto-backup sebelum setiap perubahan konfigurasi.
+- Restore via web UI.
 
-### Dashboard
-Real-time router metrics, system resource monitoring, interface status overview, and traffic statistics at a glance. Live WebSocket updates for interface data with visual traffic indicators.
+### 🔒 Security hardening (rilis saat ini)
+- Optional Basic Auth via `BEDES_ADMIN_USER` / `BEDES_ADMIN_PASSWORD` (semua
+  route, kecuali `/api/health`).
+- HTTPS lewat Traefik + Let's Encrypt automatic certificate.
+- Audit log untuk AI conversation & router command.
+- Atomic write untuk `config.json` dengan retry + fallback untuk handle
+  EBUSY di Docker bind-mount.
 
-![Dashboard](docs/screenshots/dashboard.png)
+### 🐳 Production-ready container
+- Multi-stage Docker build (frontend-builder → server-builder → production).
+- Traefik-fronted via Docker labels, sharing network `hosting-public`
+  dengan stack docker-hosting-panel.
+- Health check, restart policy, persistent data + config volumes.
+- Image `bedes-mikrotik-controller:latest`, container
+  `bedes-mikrotik-controller`.
 
-### AI Agent Diagnostics
-AI-powered network troubleshooting with automated issue detection, severity classification, confidence scoring, and actionable recommendations. Features 14 specialized MCP tools for deep network analysis including firewall path testing, connectivity diagnostics, security auditing, and internet speed testing.
+---
 
-![AI Agent](docs/screenshots/ai-agent.png)
+## 📋 Prasyarat
 
-**Example: Speed Test Analysis**
+- **Node.js 18+** (untuk development lokal; production lewat Docker).
+- **MikroTik router** dengan API access enabled (port default `8728`).
+- **AI provider** (pilih salah satu dari Claude / Cloudflare / LM Studio) —
+  opsional, dashboard tetap jalan tanpa AI.
+- **Docker + Docker Compose** (untuk deployment via container).
+- **Traefik v3.x** sebagai reverse-proxy + Let's Encrypt handler (opsional
+  tapi direkomendasikan untuk HTTPS).
 
-The AI assistant can perform comprehensive network diagnostics including internet speed tests with detailed analysis and recommendations:
+---
 
-![Speed Test](docs/screenshots/speed_test_screenshot.jpeg)
+## 🚀 Instalasi
 
-### Network Management
-Comprehensive network management with tabbed interface for Interfaces, IP Addresses, Routes, and ARP Table. Features click-to-copy for all network values, toggle interfaces on/off, real-time traffic statistics, and detailed interface configuration.
+### Opsi A — Docker (production, direkomendasikan)
 
-![Network Management](docs/screenshots/network.png)
-
-### WireGuard VPN
-Complete WireGuard VPN configuration with automatic key generation, peer management, QR code generation for mobile devices, and interface setup. Easy-to-use interface for secure remote access.
-
-![WireGuard VPN](docs/screenshots/wireguard.png)
-
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+
-- MikroTik router with API access enabled
-- AI Provider (choose one):
-  - **Claude** (Anthropic) - quality, highest cost
-  - **Cloudflare Workers AI** - cheaper, function calling support, llama-4-scout-17b-16e model
-  - **LM Studio** - Free local inference with custom models, I had good results with ibm/granite-4-h-tiny at 64,000 context
-
-### Frontend Setup
+#### 1. Clone & masuk ke direktori
 ```bash
-npm install
-npm run dev       # Development server on port 5173
-npm run build     # Production build
+git clone https://github.com/ashadebi/bedes-mikrotik-controller.git
+cd bedes-mikrotik-controller
 ```
 
-### Backend Setup
+#### 2. Copy & edit konfigurasi
 ```bash
-cd server
-npm install
 cp .env.example .env
-# Configure .env with:
-# - MikroTik router credentials
-# - AI provider API key/endpoint
-# - Server settings
-npm run dev       # Backend server on port 3000
+$EDITOR .env   # set BEDES_DOMAIN, BEDES_ADMIN_USER, BEDES_ADMIN_PASSWORD, LLM_*
 ```
 
-### Full Stack Development
+Variabel wajib:
+| Variable                  | Contoh                       | Keterangan                                |
+| ------------------------- | ---------------------------- | ----------------------------------------- |
+| `BEDES_DOMAIN`            | `bedes.example.com`          | Domain publik yang di-route Traefik       |
+| `BEDES_ADMIN_USER`        | `admin`                      | Basic Auth user (kosongkan untuk disable) |
+| `BEDES_ADMIN_PASSWORD`    | `random-32-chars`            | Basic Auth password                       |
+| `PUBLIC_NETWORK`          | `hosting-public`             | Network Docker yang di-share dengan Traefik |
+| `CORS_ORIGIN`             | `https://bedes.example.com`  | Allowed origin untuk API                  |
+| `LLM_PROVIDER`            | `lmstudio`                   | `claude` / `lmstudio` / `cloudflare`      |
+
+#### 3. Buat `config.json` pertama (opsional)
+Kalau kamu sudah punya router MikroTik, set kredensial-nya:
 ```bash
-npm run dev:full  # Runs frontend and backend concurrently with automatic port cleanup
+cp config.json.example config.json
+$EDITOR config.json
 ```
+Strukturnya (lihat bagian **Konfigurasi** di bawah).
 
-## Tech Stack
-
-**Frontend**
-- React 18 + TypeScript 5
-- CSS Modules with custom design tokens
-- Vite 5 build system
-- Atomic design architecture (atoms, molecules, organisms)
-- Socket.IO client for real-time updates
-
-**Backend**
-- Node.js + Express + TypeScript
-- MikroTik RouterOS API client (node-routeros)
-- Multi-provider AI support with 14 MCP tools:
-  - Claude AI SDK (Anthropic)
-  - Cloudflare Workers AI (llama-4-scout-17b-16e-instruct)
-  - LM Studio (local inference with OpenAI-compatible API)
-- Socket.IO for real-time WebSocket updates
-- Better-SQLite3 for local data persistence
-- QR code generation for WireGuard mobile configs
-- JSON-based configuration with file watcher and validation
-- Zod schema validation
-
-## AI Assistant Capabilities
-
-**Diagnostic Tools**
-- Firewall path analysis with exact blocking rule identification
-- Connectivity testing (ping, traceroute) with quality metrics
-- Network layer inspection (ARP, DNS, DHCP)
-- Interface status and traffic analysis
-- System resource monitoring
-- Security vulnerability detection
-
-**Troubleshooting Workflow**
-1. Initial assessment and symptom collection
-2. Layer-by-layer network analysis
-3. Firewall rule path testing (80% of connectivity issues)
-4. Interface and routing verification
-5. Confidence-scored recommendations with severity classification
-
-**Natural Language Interface**
-- Plain English query support
-- Automatic tool selection based on context
-- Detailed technical explanations
-- Actionable remediation steps
-- Issue tracking with status management (Detected, Investigating, Resolved, Ignored)
-
-See [server/MCP_TOOLS_QUICK_REFERENCE.md](server/MCP_TOOLS_QUICK_REFERENCE.md) for complete tool documentation.
-
-
-## Configuration
-
-### Environment Variables
-
-**Frontend** (`.env`)
-```
-VITE_API_URL=http://localhost:3000
-VITE_WS_URL=ws://localhost:3000
-```
-
-**Backend** (`server/.env`)
-```
-# Server
-PORT=3000
-NODE_ENV=development
-CORS_ORIGIN=http://localhost:5173
-
-# MikroTik Router
-MIKROTIK_HOST=192.168.x.x
-MIKROTIK_PORT=8728
-MIKROTIK_USERNAME=admin
-MIKROTIK_PASSWORD=your_password_here
-MIKROTIK_TIMEOUT=10000
-MIKROTIK_KEEPALIVE_SEC=30
-
-# AI Provider (choose one: claude, cloudflare, or lmstudio)
-LLM_PROVIDER=claude
-
-# Claude AI - Premium quality, high cost
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
-
-# Cloudflare Workers AI - 93% cheaper, with function calling
-CLOUDFLARE_ACCOUNT_ID=your_account_id
-CLOUDFLARE_API_TOKEN=your_api_token
-CLOUDFLARE_AI_MODEL=@cf/meta/llama-4-scout-17b-16e-instruct
-# Optional: AI Gateway for caching/analytics
-# CLOUDFLARE_AI_GATEWAY=my-gateway-name
-
-# LM Studio - Free local inference
-LMSTUDIO_ENDPOINT=http://localhost:1234/v1
-LMSTUDIO_MODEL=your-model-name
-LMSTUDIO_CONTEXT_WINDOW=32768
-
-# Data Storage
-DATA_DIR=./data
-BACKUPS_DIR=./data/backups
-```
-
-**Development Commands**
+#### 4. Build & jalankan
 ```bash
-# Frontend
-npm run dev              # Start Vite dev server
-npm run build            # Build for production
-npm run preview          # Preview production build
-
-# Backend
-cd server
-npm run dev              # Start with hot reload
-npm run build            # Build TypeScript
-npm run start            # Run production build
-npm run typecheck        # Type checking only
-
-# Configuration Management
-npm run migrate-config   # Migrate config format
-npm run validate-config  # Validate config.json
-npm run backup-config    # Create config backup
-npm run restore-config   # Restore from backup
-npm run list-backups     # List available backups
-
-# Full Stack
-npm run dev:full         # Run both frontend and backend with port cleanup
+docker-compose build bedes-mikrotik-controller
+docker-compose up -d bedes-mikrotik-controller
+docker-compose logs -f bedes-mikrotik-controller
 ```
 
-## License
+#### 5. Verifikasi
+```bash
+# Health endpoint (no auth)
+curl -u admin:<password> https://$BEDES_DOMAIN/api/health
 
-MIT
+# Lihat router profiles
+curl -u admin:<password> https://$BEDES_DOMAIN/api/router/profiles
+```
+
+#### 6. Setup router pertama via UI
+Buka `https://$BEDES_DOMAIN/` di browser, login dengan Basic Auth,
+masuk ke **Settings → Router Profiles → Add Router**, isi:
+- Name, Host (IP MikroTik), Port, Username, Password
+- Klik **Save** lalu **Activate**.
+
+#### 7. (Opsional) Traefik labels
+`docker-compose.yml` sudah include labels lengkap. Pastikan VPS/host punya
+Traefik di network yang sama (`hosting-public` by default). DNS A record
+untuk `$BEDES_DOMAIN` harus menunjuk ke IP publik VPS tempat Traefik
+listen 443.
+
+### Opsi B — Development lokal (tanpa Docker)
+
+```bash
+git clone https://github.com/ashadebi/bedes-mikrotik-controller.git
+cd bedes-mikrotik-controller
+npm install
+cd server && npm install && cp .env.example .env && cd ..
+npm run dev:full   # jalanin frontend (5173) + backend (3000) paralel
+```
+
+Frontend: http://localhost:5173
+Backend: http://localhost:3000
+
+---
+
+## 🧭 Cara pakai
+
+### Multi-router workflow
+
+1. **Buka Settings → Router Profiles** di sidebar.
+2. **Tambah router**: klik "Add Router", isi host/port/username/password,
+   klik Save. Profile baru otomatis menjadi active kalau belum ada active
+   router.
+3. **Switch active router**: klik "Activate" di profile yang dikehendaki.
+   Backend akan refresh koneksi RouterOS API ke router baru.
+4. **Edit profile**: ubah field apapun. Password kosong / `********` artinya
+   "pertahankan password lama".
+5. **Hapus profile**: klik delete di profile yang tidak dipakai lagi. Kalau
+   router yang dihapus adalah active, system auto-switch ke router pertama
+   yang tersisa.
+6. **Verify**: lihat sidebar → "Connected Router" panel → IP, status,
+   uptime, last error.
+
+### AI assistant chat
+1. Buka menu **AI Assistant** di sidebar.
+2. Tulis pertanyaan natural language, misal:
+   - "Kenapa client 192.168.1.100 tidak bisa akses HTTPS ke 10.0.0.50?"
+   - "Cek health router sekarang, ada issue ga?"
+   - "Buatin WireGuard peer baru untuk user A dengan IP 10.10.0.2/24."
+3. AI otomatis pilih tool yang relevan, tanyakan ke router aktif, kasih
+   jawaban + rekomendasi + severity.
+
+### Backup & restore
+1. Menu **Backups**: lihat list backup (auto-backup dibuat setiap kali
+   settings di-update).
+2. Klik **Create Backup** untuk backup on-demand.
+3. Klik **Download** untuk download `.backup` binary atau `.rsc` export.
+4. Klik **Restore** untuk upload backup kembali ke router.
+
+### WireGuard setup
+1. Menu **WireGuard** → klik "Create Interface".
+2. Tulis interface name, port, address range.
+3. Klik "Add Peer" untuk tambah device — QR code langsung tersedia untuk
+   scan dari mobile.
+
+---
+
+## ⚙️ Konfigurasi
+
+### `config.json` (data layer, persistent)
+
+```json
+{
+  "version": "1.0.0",
+  "server":    { "port": 3000, "corsOrigin": "https://...", "nodeEnv": "production" },
+  "mikrotik":  { "host": "192.168.88.1", "port": 8728, "username": "admin", "password": "..." },
+  "routers":   [],
+  "activeRouterId": null,
+  "llm":       { "provider": "lmstudio", "lmstudio": { "endpoint": "https://...", "model": "qwen3-8b" } },
+  "assistant": { "temperature": 0.7, "maxTokens": 2048, "systemPrompt": "..." }
+}
+```
+
+Field baru di multi-router:
+- `routers`: array of `RouterProfile` (id, name, host, port, username,
+  password, timeout, keepaliveInterval, speedTest, enabled).
+- `activeRouterId`: ID router yang sedang dipilih.
+
+Backend otomatis fallback ke `mikrotik{}` (single-router) kalau
+`routers[]` kosong.
+
+### `.env` (runtime, container)
+
+Lihat [`.env.example`](./.env.example) untuk semua opsi. Highlights:
+- `BEDES_DOMAIN` — domain publik Traefik.
+- `BEDES_ADMIN_USER` / `BEDES_ADMIN_PASSWORD` — Basic Auth (kosong = off).
+- `LLM_PROVIDER` + `*_ENDPOINT` / `*_API_KEY` — AI provider.
+
+---
+
+## 🔌 REST API
+
+Semua endpoint di-prefix `/api`. Jika Basic Auth enabled, sertakan
+`Authorization: Basic <base64(user:pass)>` header.
+
+### Health
+- `GET /api/health` — status server, uptime, memory, router connection,
+  LLM config.
+
+### Router profiles (multi-router)
+- `GET    /api/router/profiles` — list semua profile + active selection.
+- `POST   /api/router/profiles` — tambah router baru.
+- `PUT    /api/router/profiles/:id` — update profile.
+- `POST   /api/router/profiles/:id/activate` — pilih active router.
+- `DELETE /api/router/profiles/:id` — hapus profile.
+
+### Settings
+- `GET /api/settings` — current settings (masked passwords).
+- `PUT /api/settings` — update settings (server / mikrotik / routers / llm
+  / assistant).
+
+### Backup
+- `GET    /api/backups` — list backups.
+- `POST   /api/backups` — create backup on-demand.
+- `GET    /api/backups/:id/download` — download binary.
+- `POST   /api/backups/restore` — upload & restore.
+
+### AI agent
+- `POST /api/agent/chat` — natural language query (streaming).
+- `GET  /api/agent/issues` — list detected issues.
+
+### Terminal
+- `POST /api/terminal/exec` — eksekusi perintah RouterOS (whitelisted).
+
+### WireGuard
+- `GET    /api/wireguard/interfaces`
+- `POST   /api/wireguard/interfaces`
+- `GET    /api/wireguard/peers`
+- `POST   /api/wireguard/peers`
+
+Lihat [server/README.md](./server/README.md) untuk detail lengkap.
+
+---
+
+## 🐛 Troubleshooting
+
+| Symptom                                       | Penyebab                                     | Fix |
+|----------------------------------------------|----------------------------------------------|-----|
+| Container restart loop                       | Module missing di production deps            | Cek log: `docker logs bedes-mikrotik-controller` — biasanya error `ERR_MODULE_NOT_FOUND`. Tambah package ke `server/package.json` & rebuild. |
+| 502 Bad Gateway dari Traefik                 | Container tidak healthy / Traefik tidak bisa resolve IP | Cek `docker logs hosting-traefik`. Pastiin `traefik.docker.network=hosting-public` di label. |
+| 401 Authentication required                  | Basic Auth enabled tapi tidak dikirim         | Set `BEDES_ADMIN_USER`/`PASSWORD` di `.env`, atau sertakan Basic Auth header. |
+| `EBUSY` saat save settings                   | File watcher (chokidar) hold file lock        | `atomicWrite` sudah ada retry + fallback direct write (commit terbaru). |
+| AI Assistant not responding                  | LLM provider credentials salah / endpoint unreachable | Cek `/api/health` → `llm.configured`. Coba hit endpoint LLM manual. |
+| Cannot connect to MikroTik                   | API port blocked / wrong credentials         | Pastikan port 8728 (atau 8729 SSL) terbuka. Test pakai `node-routeros` CLI. |
+
+---
+
+## 🛠️ Development
+
+```bash
+# Frontend only (Vite dev server)
+npm run dev
+
+# Backend only (with hot reload)
+cd server && npm run dev
+
+# Both concurrently with port cleanup
+npm run dev:full
+
+# Build production
+npm run build:all
+
+# Type check
+cd server && npm run typecheck
+
+# Config management CLI
+cd server && npm run validate-config
+cd server && npm run backup-config
+cd server && npm run list-backups
+```
+
+### Code structure
+```
+.
+├── src/                         # React frontend (atomic design: atoms/molecules/organisms)
+│   ├── components/
+│   │   ├── atoms/               # Button, Input, Slider, Toggle, dll
+│   │   ├── molecules/           # FormField, ToggleField, dll
+│   │   └── organisms/           # Sidebar, SettingsSection, NetworkMap, dll
+│   ├── pages/                   # Dashboard, AIAssistantPage, RouterPage, SettingsPage, SetupWizardPage
+│   ├── contexts/                # React contexts
+│   ├── hooks/                   # Custom React hooks
+│   ├── services/                # API client wrappers
+│   └── types/                   # TypeScript types
+├── server/                      # Express backend
+│   └── src/
+│       ├── routes/              # router.ts, agent.ts, backups.ts, health.ts, dll
+│       ├── services/
+│       │   ├── ai/              # 14 MCP tools + 3 LLM providers
+│       │   ├── agent/           # Health monitor, issue detector, learning
+│       │   ├── config/          # Zod-validated schema + atomic write + migrator
+│       │   ├── wireguard/       # WireGuard DB + service
+│       │   └── *.service.ts     # MikroTik, terminal, backup, settings
+│       └── utils/               # Terminal formatters
+├── Dockerfile                   # Multi-stage build
+├── docker-compose.yml           # Traefik-fronted service
+├── .env.example                 # Runtime configuration template
+└── config.json.example          # Persistent data template
+```
+
+---
+
+## 📜 License & Credits
+
+### Upstream
+Project ini di-fork dari
+[**JungleM0nkey/apehost-mikrotik-controller**](https://github.com/JungleM0nkey/apehost-mikrotik-controller).
+Terima kasih kepada upstream author dan semua kontributor untuk fondasi
+multi-router MikroTik management + AI assistant yang solid. Versi upstream
+juga berlisensi MIT.
+
+Modifikasi utama yang dilakukan di fork ini:
+- **Rename** ke `BEDES MikroTik Controller` (codebase + image + container +
+  Traefik labels + env var prefix).
+- **Multi-router CRUD**: schema `RouterProfile[]` + `activeRouterId`,
+  endpoint `/api/router/profiles` lengkap, fallback ke single-router
+  legacy `mikrotik{}` block.
+- **Frontend Router Profiles section** di Settings page dengan
+  add/edit/activate/delete UI.
+- **Optional Basic Auth** via `BEDES_ADMIN_USER` / `BEDES_ADMIN_PASSWORD`
+  env var, dengan fallback ke env lama untuk transisi mulus.
+- **Containerization**: multi-stage Dockerfile + Traefik labels +
+  `docker-compose.yml` siap production.
+- **Bug fixes**:
+  - Tambah `uuid` dependency di `server/package.json` (sebelumnya bocor ke
+    backup routes tapi tidak di-declare).
+  - Hapus `react-markdown`/`remark-gfm` yang nyasar dari server deps.
+  - Dockerfile copy `.sql` schema files ke dist (runtime read dari
+    `__dirname`).
+  - `atomicWrite()` retry + fallback ke direct write untuk handle EBUSY
+    pada Docker bind-mount (chokidar watcher lock).
+- **Dokumentasi**: README komprehensif (install, pakai, API, troubleshooting).
+
+### Lisensi
+MIT License — lihat [LICENSE.txt](./LICENSE.txt).
+
+Logo & branding "BEDES" adalah trademark dari fork maintainer.
+
+---
+
+## 🤝 Contributing
+
+PR & issue welcome di
+[ashadebi/bedes-mikrotik-controller](https://github.com/ashadebi/bedes-mikrotik-controller).
+Untuk perubahan besar, buka issue dulu untuk diskusi.
