@@ -33,6 +33,12 @@ export const MikroTikConfigSchema = z.object({
   speedTest: SpeedTestConfigSchema,
 });
 
+export const RouterProfileSchema = MikroTikConfigSchema.extend({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  enabled: z.boolean().default(true),
+});
+
 // LLM Configuration Schema
 export const LLMConfigSchema = z.object({
   provider: z.enum(['claude', 'lmstudio', 'cloudflare']),
@@ -111,6 +117,8 @@ export const AppConfigSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   server: ServerConfigSchema,
   mikrotik: MikroTikConfigSchema,
+  routers: z.array(RouterProfileSchema).default([]),
+  activeRouterId: z.string().optional(),
   llm: LLMConfigSchema,
   assistant: AssistantConfigSchema,
   ui: UIConfigSchema,
@@ -120,6 +128,7 @@ export const AppConfigSchema = z.object({
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type SpeedTestConfig = z.infer<typeof SpeedTestConfigSchema>;
 export type MikroTikConfig = z.infer<typeof MikroTikConfigSchema>;
+export type RouterProfile = z.infer<typeof RouterProfileSchema>;
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 export type AssistantConfig = z.infer<typeof AssistantConfigSchema>;
 export type UITerminalConfig = z.infer<typeof UITerminalConfigSchema>;
@@ -130,7 +139,7 @@ export type UIConfig = z.infer<typeof UIConfigSchema>;
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 // Config sections enum
-export type ConfigSection = 'server' | 'mikrotik' | 'llm' | 'assistant' | 'ui';
+export type ConfigSection = 'server' | 'mikrotik' | 'routers' | 'activeRouterId' | 'llm' | 'assistant' | 'ui';
 
 // Validation result interface
 export interface ValidationResult {

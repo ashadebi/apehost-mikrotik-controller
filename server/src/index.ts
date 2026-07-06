@@ -44,6 +44,29 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const basicAuthUser = process.env.APECONTROL_ADMIN_USER || process.env.ADMIN_USER;
+const basicAuthPassword = process.env.APECONTROL_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD;
+
+if (basicAuthUser && basicAuthPassword) {
+  app.use((req: Request, res: Response, next) => {
+    if (req.path === '/api/health' || req.path.startsWith('/api/health/')) {
+      return next();
+    }
+
+    const header = req.headers.authorization || '';
+    const [scheme, encoded] = header.split(' ');
+    if (scheme === 'Basic' && encoded) {
+      const [user, password] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+      if (user === basicAuthUser && password === basicAuthPassword) {
+        return next();
+      }
+    }
+
+    res.setHeader('WWW-Authenticate', 'Basic realm="ApeControl"');
+    return res.status(401).send('Authentication required');
+  });
+}
+
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -65,10 +88,13 @@ app.use('/api/agent', agentRoutes);
 app.use('/api/backups', backupRoutes);
 app.use('/api/wireguard', wireguardRoutes);
 
+const frontendDistDir = process.env.FRONTEND_DIST_DIR || path.resolve(__dirname, '../../dist');
+app.use(express.static(frontendDistDir));
+
 // Root endpoint
-app.get('/', (req: Request, res: Response) => {
+app.get('/api', (req: Request, res: Response) => {
   res.json({
-    name: 'MikroTik Dashboard API',
+    name: 'ApeControl API',
     version: '1.0.0',
     status: 'running',
     endpoints: {
@@ -77,6 +103,13 @@ app.get('/', (req: Request, res: Response) => {
       terminal: '/api/terminal'
     }
   });
+});
+
+app.get('*', (req: Request, res: Response, next) => {
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+  res.sendFile(path.join(frontendDistDir, 'index.html'));
 });
 
 // 404 handler

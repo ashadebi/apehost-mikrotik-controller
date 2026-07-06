@@ -90,7 +90,7 @@ export class UnifiedConfigService extends EventEmitter {
     if (!oldConfig) return { all: newConfig };
 
     const changes: Record<string, any> = {};
-    const sections: ConfigSection[] = ['server', 'mikrotik', 'llm', 'assistant', 'ui'];
+    const sections: ConfigSection[] = ['server', 'mikrotik', 'routers', 'activeRouterId', 'llm', 'assistant', 'ui'];
 
     for (const section of sections) {
       if (JSON.stringify(oldConfig[section]) !== JSON.stringify(newConfig[section])) {
@@ -320,16 +320,51 @@ export class UnifiedConfigService extends EventEmitter {
 
   /**
    * Atomic write to config.json
+   *
+   * Uses rename for atomicity on local FS. On Docker bind-mounts (or other
+   * filesystems that hold locks on the target), rename can fail with EBUSY
+   * because file watchers (chokidar) keep the file open. We retry briefly
+   * and fall back to a direct write if EBUSY persists.
    */
   private async atomicWrite(config: AppConfig): Promise<void> {
     const tempPath = `${this.configPath}.tmp`;
-    await fs.writeFile(tempPath, JSON.stringify(config, null, 2), 'utf-8');
-    await fs.rename(tempPath, this.configPath);
+    const payload = JSON.stringify(config, null, 2);
+    await fs.writeFile(tempPath, payload, 'utf-8');
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rename(tempPath, this.configPath);
+        lastError = undefined;
+        break;
+      } catch (error: any) {
+        lastError = error;
+        const code = error?.code;
+        if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'EACCES') {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+
+    // Fallback: rename kept failing (likely a bind-mount / chokidar holding the file).
+    // Write directly to keep the app working — last-write-wins semantics are fine
+    // because both `save()` and `updateSettings()` are serialized by writeLock and
+    // the prior backup step has already captured the previous state.
+    if (lastError) {
+      console.warn('[UnifiedConfig] Atomic rename failed persistently (EBUSY on bind-mount). Falling back to direct write.');
+      try {
+        await fs.rm(tempPath, { force: true });
+      } catch {
+        /* ignore */
+      }
+      await fs.writeFile(this.configPath, payload, 'utf-8');
+    }
 
     // Set secure permissions
     try {
       await fs.chmod(this.configPath, 0o600);
-    } catch (error) {
+    } catch {
       console.warn('[UnifiedConfig] Could not set file permissions to 600');
     }
   }

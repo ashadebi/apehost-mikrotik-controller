@@ -1,5 +1,5 @@
 import { unifiedConfigService } from './config/unified-config.service.js';
-import type { AppConfig } from './config/config.schema.js';
+import type { AppConfig, RouterProfile } from './config/config.schema.js';
 
 export interface ServerSettings {
   // Server Configuration
@@ -25,6 +25,8 @@ export interface ServerSettings {
       pingSamples: number;
     };
   };
+  routers: RouterProfile[];
+  activeRouterId?: string;
 
   // LLM Configuration
   llm: {
@@ -86,6 +88,8 @@ class SettingsService {
           pingSamples: config.mikrotik.speedTest.pingSamples,
         },
       },
+      routers: config.routers || [],
+      activeRouterId: config.activeRouterId,
       llm: {
         provider: config.llm.provider,
         claude: {
@@ -119,6 +123,16 @@ class SettingsService {
     try {
       // Get current config
       const config = await unifiedConfigService.get();
+      const routers = settings.routers
+        ? settings.routers.map((router) => {
+            const existing = (config.routers || []).find((item) => item.id === router.id);
+            return {
+              ...router,
+              password: router.password === '********' ? existing?.password || '' : router.password,
+              speedTest: router.speedTest || existing?.speedTest || config.mikrotik.speedTest,
+            };
+          })
+        : config.routers ?? [];
 
       // Create updated config by merging changes
       const updatedConfig: AppConfig = {
@@ -144,6 +158,8 @@ class SettingsService {
             pingSamples: settings.mikrotik.speedTest.pingSamples ?? config.mikrotik.speedTest.pingSamples,
           } : config.mikrotik.speedTest,
         } : config.mikrotik,
+        routers,
+        activeRouterId: settings.activeRouterId ?? config.activeRouterId,
         llm: settings.llm ? {
           ...config.llm,
           provider: settings.llm.provider || config.llm.provider,

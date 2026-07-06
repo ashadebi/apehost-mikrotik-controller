@@ -6,6 +6,13 @@ import mikrotikService from '../services/mikrotik.js';
 
 const router = Router();
 
+function maskRouterPasswords(routers: any[] = []) {
+  return routers.map((profile) => ({
+    ...profile,
+    password: profile.password ? '********' : ''
+  }));
+}
+
 /**
  * GET /api/settings
  * Get current server settings
@@ -21,6 +28,7 @@ router.get('/', async (req: Request, res: Response) => {
         ...settings.mikrotik,
         password: settings.mikrotik.password ? '********' : ''
       },
+      routers: maskRouterPasswords(settings.routers),
       llm: {
         ...settings.llm,
         claude: {
@@ -72,7 +80,7 @@ router.put('/', async (req: Request, res: Response) => {
     }
 
     // Refresh MikroTik connection if MikroTik settings were changed
-    if (settings.mikrotik) {
+    if (settings.mikrotik || settings.routers || settings.activeRouterId) {
       try {
         const reconnected = await mikrotikService.refreshConnection();
         if (reconnected) {
@@ -92,6 +100,7 @@ router.put('/', async (req: Request, res: Response) => {
         ...updatedSettings.mikrotik,
         password: updatedSettings.mikrotik.password ? '********' : ''
       },
+      routers: maskRouterPasswords(updatedSettings.routers),
       llm: {
         ...updatedSettings.llm,
         claude: {

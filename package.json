@@ -1,7 +1,7 @@
 {
-  "name": "mikrotik-dashboard",
+  "name": "apecontrol",
   "version": "1.0.0",
-  "description": "MikroTik Router Management Dashboard",
+  "description": "ApeControl multi-router MikroTik management dashboard",
   "private": true,
   "type": "module",
   "scripts": {

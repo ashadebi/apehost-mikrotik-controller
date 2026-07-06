@@ -7,6 +7,7 @@
 
 import settingsService from './settings.js';
 import type { ServerSettings } from './settings.js';
+import type { RouterProfile } from './config/config.schema.js';
 
 export interface AppConfig {
   server: {
@@ -29,6 +30,8 @@ export interface AppConfig {
       pingSamples: number;
     };
   };
+  routers: RouterProfile[];
+  activeRouterId?: string;
   llm: {
     provider: 'claude' | 'lmstudio' | 'cloudflare';
     claude: {
@@ -98,6 +101,8 @@ class ConfigManager {
             pingSamples: settings.mikrotik.speedTest.pingSamples,
           },
         },
+        routers: settings.routers || [],
+        activeRouterId: settings.activeRouterId,
         llm: {
           provider: settings.llm.provider,
           claude: {
@@ -160,7 +165,8 @@ class ConfigManager {
    */
   public async getMikroTikConfig() {
     const config = await this.getConfig();
-    return config.mikrotik;
+    const activeRouter = config.routers.find((router) => router.id === config.activeRouterId && router.enabled !== false);
+    return activeRouter || config.mikrotik;
   }
 
   /**

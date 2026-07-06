@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  apecontrol:
+    build: .
+    image: apecontrol:latest
+    container_name: apecontrol
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      FRONTEND_DIST_DIR: /app/dist
+    volumes:
+      - ./data:/app/server/data
+      - ./config.json:/app/config.json
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=hosting-public
+      - traefik.http.routers.apecontrol-web.rule=Host(`${APECONTROL_DOMAIN}`)
+      - traefik.http.routers.apecontrol-web.entrypoints=web
+      - traefik.http.routers.apecontrol-web.middlewares=apecontrol-https-redirect
+      - traefik.http.middlewares.apecontrol-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.apecontrol-https-redirect.redirectscheme.permanent=true
+      - traefik.http.routers.apecontrol.rule=Host(`${APECONTROL_DOMAIN}`)
+      - traefik.http.routers.apecontrol.entrypoints=websecure
+      - traefik.http.routers.apecontrol.tls=true
+      - traefik.http.routers.apecontrol.tls.certresolver=letsencrypt
+      - traefik.http.services.apecontrol.loadbalancer.server.port=3000
+    networks:
+      - hosting-public
+
+networks:
+  hosting-public:
+    external: true
+    name: ${PUBLIC_NETWORK:-hosting-public}

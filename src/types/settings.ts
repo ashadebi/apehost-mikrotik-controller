@@ -17,6 +17,8 @@ export interface ServerSettings {
     port: number;
     username: string;
     password: string;
+    timeout: number;
+    keepaliveInterval: number;
     speedTest: {
       fileSizeMB: number;
       testServer: 'cloudflare' | 'google' | 'custom';
@@ -25,6 +27,8 @@ export interface ServerSettings {
       pingSamples: number;
     };
   };
+  routers: RouterProfile[];
+  activeRouterId?: string;
   llm: {
     provider: AIProvider;
     claude: {
@@ -48,6 +52,19 @@ export interface ServerSettings {
     maxTokens: number;
     systemPrompt: string;
   };
+}
+
+export interface RouterProfile {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  timeout: number;
+  keepaliveInterval: number;
+  speedTest: ServerSettings['mikrotik']['speedTest'];
+  enabled: boolean;
 }
 
 // UI-Only Settings (stored in localStorage)

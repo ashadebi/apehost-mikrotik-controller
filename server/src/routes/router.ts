@@ -1,7 +1,157 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import mikrotikService from '../services/mikrotik.js';
+import settingsService from '../services/settings.js';
 
 export const routerRoutes = Router();
+
+function maskRouter(profile: any) {
+  return {
+    ...profile,
+    password: profile.password ? '********' : ''
+  };
+}
+
+async function getRouterSettings() {
+  const settings = await settingsService.getSettings();
+  const fallbackProfile = {
+    id: 'default',
+    name: 'Default Router',
+    enabled: true,
+    ...settings.mikrotik
+  };
+  const routers = settings.routers?.length ? settings.routers : [fallbackProfile];
+  return { settings, routers };
+}
+
+/**
+ * GET /api/router/profiles
+ * List configured MikroTik router profiles.
+ */
+routerRoutes.get('/profiles', async (req: Request, res: Response) => {
+  try {
+    const { settings, routers } = await getRouterSettings();
+    res.json({
+      activeRouterId: settings.activeRouterId || routers[0]?.id || 'default',
+      routers: routers.map(maskRouter)
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to load router profiles', message: error.message });
+  }
+});
+
+/**
+ * POST /api/router/profiles
+ * Add a MikroTik router profile.
+ */
+routerRoutes.post('/profiles', async (req: Request, res: Response) => {
+  try {
+    const { settings } = await getRouterSettings();
+    const profile = {
+      id: req.body.id || randomUUID(),
+      name: req.body.name || req.body.host || 'MikroTik Router',
+      host: req.body.host,
+      port: Number(req.body.port || 8728),
+      username: req.body.username || 'admin',
+      password: req.body.password || '',
+      timeout: Number(req.body.timeout || settings.mikrotik.timeout || 10000),
+      keepaliveInterval: Number(req.body.keepaliveInterval || settings.mikrotik.keepaliveInterval || 30000),
+      speedTest: req.body.speedTest || settings.mikrotik.speedTest,
+      enabled: req.body.enabled !== false
+    };
+
+    if (!profile.host) {
+      return res.status(400).json({ error: 'Router host is required' });
+    }
+
+    const routers = [...(settings.routers || []), profile];
+    await settingsService.updateSettings({ routers, activeRouterId: settings.activeRouterId || profile.id });
+    res.status(201).json(maskRouter(profile));
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to add router profile', message: error.message });
+  }
+});
+
+/**
+ * PUT /api/router/profiles/:id
+ * Update a MikroTik router profile.
+ */
+routerRoutes.put('/profiles/:id', async (req: Request, res: Response) => {
+  try {
+    const { settings } = await getRouterSettings();
+    const routers = [...(settings.routers || [])];
+    const index = routers.findIndex((router) => router.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'Router profile not found' });
+    }
+
+    const current = routers[index];
+    routers[index] = {
+      ...current,
+      ...req.body,
+      id: current.id,
+      port: Number(req.body.port ?? current.port),
+      timeout: Number(req.body.timeout ?? current.timeout),
+      keepaliveInterval: Number(req.body.keepaliveInterval ?? current.keepaliveInterval),
+      password: req.body.password === '********' ? current.password : (req.body.password ?? current.password),
+      speedTest: req.body.speedTest || current.speedTest,
+      enabled: req.body.enabled ?? current.enabled
+    };
+
+    await settingsService.updateSettings({ routers });
+    if (settings.activeRouterId === current.id) {
+      await mikrotikService.refreshConnection();
+    }
+    res.json(maskRouter(routers[index]));
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to update router profile', message: error.message });
+  }
+});
+
+/**
+ * POST /api/router/profiles/:id/activate
+ * Select the active router profile used by dashboard, terminal, and agent features.
+ */
+routerRoutes.post('/profiles/:id/activate', async (req: Request, res: Response) => {
+  try {
+    const { settings, routers } = await getRouterSettings();
+    const profile = routers.find((router) => router.id === req.params.id);
+    if (!profile) {
+      return res.status(404).json({ error: 'Router profile not found' });
+    }
+    if (profile.enabled === false) {
+      return res.status(400).json({ error: 'Router profile is disabled' });
+    }
+
+    await settingsService.updateSettings({
+      activeRouterId: profile.id,
+      mikrotik: profile
+    });
+    await mikrotikService.refreshConnection();
+    res.json({ activeRouterId: profile.id, router: maskRouter(profile) });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to activate router profile', message: error.message });
+  }
+});
+
+/**
+ * DELETE /api/router/profiles/:id
+ * Delete a MikroTik router profile.
+ */
+routerRoutes.delete('/profiles/:id', async (req: Request, res: Response) => {
+  try {
+    const { settings } = await getRouterSettings();
+    const routers = (settings.routers || []).filter((router) => router.id !== req.params.id);
+    const activeRouterId = settings.activeRouterId === req.params.id ? routers[0]?.id : settings.activeRouterId;
+    await settingsService.updateSettings({ routers, activeRouterId });
+    if (settings.activeRouterId === req.params.id) {
+      await mikrotikService.refreshConnection();
+    }
+    res.status(204).send();
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to delete router profile', message: error.message });
+  }
+});
 
 /**
  * GET /api/router/status

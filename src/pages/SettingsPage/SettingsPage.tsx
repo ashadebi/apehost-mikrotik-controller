@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Slider, Alert, Spin, message } from 'antd';
 import { SettingsSection } from '../../components/organisms/SettingsSection/SettingsSection';
 import { FormField } from '../../components/molecules/FormField/FormField';
-import { ToggleField } from '../../components/molecules/ToggleField/ToggleField';
 import { Input } from '../../components/atoms/Input/Input';
 import { Textarea } from '../../components/atoms/Textarea/Textarea';
 import { Button } from '../../components/atoms/Button/Button';
-import { ServerSettings } from '../../types/settings';
+import { RouterProfile, ServerSettings } from '../../types/settings';
 import styles from './SettingsPage.module.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -268,7 +267,7 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const updateServerSettings = <K extends keyof ServerSettings>(
+  const updateServerSettings = <K extends 'server' | 'mikrotik' | 'llm' | 'assistant'>(
     section: K,
     field: keyof ServerSettings[K],
     value: any
@@ -288,6 +287,71 @@ export const SettingsPage: React.FC = () => {
     } else if (section === 'llm' || section === 'assistant') {
       setLLMTest(null);
     }
+  };
+
+  const updateRouterProfile = (id: string, field: keyof RouterProfile, value: any) => {
+    if (!serverSettings) return;
+    setServerSettings({
+      ...serverSettings,
+      routers: (serverSettings.routers || []).map((router) =>
+        router.id === id ? { ...router, [field]: value } : router
+      )
+    });
+    setHasServerChanges(true);
+    setMikrotikTest(null);
+  };
+
+  const addRouterProfile = () => {
+    if (!serverSettings) return;
+    const current = serverSettings.mikrotik;
+    const router: RouterProfile = {
+      id: `router-${Date.now()}`,
+      name: `Router ${(serverSettings.routers || []).length + 1}`,
+      host: current.host || '',
+      port: current.port || 8728,
+      username: current.username || 'admin',
+      password: '',
+      timeout: current.timeout || 10000,
+      keepaliveInterval: current.keepaliveInterval || 30000,
+      speedTest: current.speedTest,
+      enabled: true
+    };
+    setServerSettings({
+      ...serverSettings,
+      routers: [...(serverSettings.routers || []), router],
+      activeRouterId: serverSettings.activeRouterId || router.id
+    });
+    setHasServerChanges(true);
+  };
+
+  const removeRouterProfile = (id: string) => {
+    if (!serverSettings) return;
+    const routers = (serverSettings.routers || []).filter((router) => router.id !== id);
+    setServerSettings({
+      ...serverSettings,
+      routers,
+      activeRouterId: serverSettings.activeRouterId === id ? routers[0]?.id : serverSettings.activeRouterId
+    });
+    setHasServerChanges(true);
+  };
+
+  const activateRouterProfile = (router: RouterProfile) => {
+    if (!serverSettings) return;
+    setServerSettings({
+      ...serverSettings,
+      activeRouterId: router.id,
+      mikrotik: {
+        host: router.host,
+        port: router.port,
+        username: router.username,
+        password: router.password,
+        timeout: router.timeout,
+        keepaliveInterval: router.keepaliveInterval,
+        speedTest: router.speedTest
+      }
+    });
+    setHasServerChanges(true);
+    setMikrotikTest(null);
   };
 
   const updateLLMProviderSettings = (
@@ -400,6 +464,75 @@ export const SettingsPage: React.FC = () => {
                         </SettingsSection>
                       </div>
 
+                      {/* Router Profiles */}
+                      <div
+                        id="router-profiles"
+                        data-section
+                        className={`${styles.sectionContainer} ${activeSection === 'router-profiles' ? styles.active : ''}`}
+                      >
+                        <SettingsSection
+                          title="Router Profiles"
+                          description="Manage multiple MikroTik hosts and choose the active router for dashboard, terminal, and agent tools"
+                        >
+                          <div className={styles.routerProfiles}>
+                            {(serverSettings.routers || []).map((router) => (
+                              <div key={router.id} className={`${styles.routerProfile} ${serverSettings.activeRouterId === router.id ? styles.routerProfileActive : ''}`}>
+                                <div className={styles.routerProfileHeader}>
+                                  <div>
+                                    <div className={styles.routerProfileTitle}>{router.name || router.host}</div>
+                                    <div className={styles.routerProfileMeta}>{router.host}:{router.port} · {router.username}</div>
+                                  </div>
+                                  <div className={styles.routerProfileActions}>
+                                    <Button
+                                      size="small"
+                                      variant={serverSettings.activeRouterId === router.id ? 'primary' : 'secondary'}
+                                      onClick={() => activateRouterProfile(router)}
+                                    >
+                                      {serverSettings.activeRouterId === router.id ? 'Active' : 'Use'}
+                                    </Button>
+                                    <Button size="small" variant="secondary" onClick={() => removeRouterProfile(router.id)}>
+                                      Remove
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className={styles.gridTwo}>
+                                  <FormField label="Name">
+                                    <Input value={router.name} onChange={(e) => updateRouterProfile(router.id, 'name', e.target.value)} />
+                                  </FormField>
+                                  <FormField label="Host">
+                                    <Input value={router.host} onChange={(e) => updateRouterProfile(router.id, 'host', e.target.value)} />
+                                  </FormField>
+                                  <FormField label="Port">
+                                    <Input type="number" value={router.port} onChange={(e) => updateRouterProfile(router.id, 'port', parseInt(e.target.value))} />
+                                  </FormField>
+                                  <FormField label="Username">
+                                    <Input value={router.username} onChange={(e) => updateRouterProfile(router.id, 'username', e.target.value)} />
+                                  </FormField>
+                                  <FormField label="Password">
+                                    <Input type="password" value={router.password} onChange={(e) => updateRouterProfile(router.id, 'password', e.target.value)} />
+                                  </FormField>
+                                  <FormField label="Enabled">
+                                    <select
+                                      className={styles.select}
+                                      value={router.enabled ? 'yes' : 'no'}
+                                      onChange={(e) => updateRouterProfile(router.id, 'enabled', e.target.value === 'yes')}
+                                    >
+                                      <option value="yes">Enabled</option>
+                                      <option value="no">Disabled</option>
+                                    </select>
+                                  </FormField>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <Button variant="secondary" onClick={addRouterProfile}>
+                            Add Router
+                          </Button>
+                        </SettingsSection>
+                      </div>
+
                       {/* MikroTik Connection */}
                       <div
                         id="router-api"
@@ -460,6 +593,14 @@ export const SettingsPage: React.FC = () => {
                             >
                               {testingMikrotik ? 'Testing MikroTik...' : 'Test MikroTik Connection'}
                             </Button>
+                            {mikrotikTest && (
+                              <Alert
+                                type={mikrotikTest.success ? 'success' : 'error'}
+                                message={mikrotikTest.success ? `Connected to ${mikrotikTest.routerInfo?.name || 'router'}` : mikrotikTest.error || 'Connection test failed'}
+                                showIcon
+                                style={{ marginTop: 'var(--space-md)' }}
+                              />
+                            )}
                           </FormField>
                         </SettingsSection>
                       </div>
@@ -800,6 +941,14 @@ export const SettingsPage: React.FC = () => {
                             >
                               {testingLLM ? 'Testing LLM...' : 'Test LLM Connection'}
                             </Button>
+                            {llmTest && (
+                              <Alert
+                                type={llmTest.success ? 'success' : 'error'}
+                                message={llmTest.success ? `Connected to ${llmTest.providerInfo?.provider || serverSettings.llm.provider}` : llmTest.error || 'LLM test failed'}
+                                showIcon
+                                style={{ marginTop: 'var(--space-md)' }}
+                              />
+                            )}
                           </FormField>
                         </SettingsSection>
                       </div>

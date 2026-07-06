@@ -30,6 +30,8 @@ export const DEFAULT_CONFIG: AppConfig = {
       pingSamples: 4,
     },
   },
+  routers: [],
+  activeRouterId: undefined,
 
   llm: {
     provider: 'lmstudio',
